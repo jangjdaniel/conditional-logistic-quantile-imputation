@@ -1,0 +1,8 @@
+```{r}
+library(tidyverse)
+```
+
+```{r}
+set.seed(2025)
+rchisq(1, df = 2)
+```
