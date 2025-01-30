@@ -4,9 +4,10 @@ library(missMethods)
 library(quantreg)
 ```
 
+## First section: An exercise in conditional quantile imputation (not sure of its exact name)
+
 ```{r}
 #initial data generation
-
 set.seed(2025)
 
 #skewed distribution for imputation testing
@@ -23,13 +24,11 @@ ggplot(data = my_data, aes(x=original_data)) +
 
 ```{r}
 #mechanism to make missing data (from https://cran.r-project.org/web/packages/missMethods/vignettes/Generating-missing-values.html)
-
 make_missing <- delete_MCAR(my_data, 0.5, "original_data") #half the data is gone now
 ```
 
 ```{r}
 #the algorithm to impute missing completely at random values
-
 imputation_process <- function(full_data) {
   suppressWarnings({ #thanks stackexchange
     unif_value <- round(runif(1, min = 0, max = 1), 2) #sample from Unif(0,1) and round to hundredths
@@ -73,3 +72,4 @@ rm(make_missing)
 ggplot(comparison, aes(data, fill = type)) + 
   geom_density(alpha = 0.2)
 ```
+
