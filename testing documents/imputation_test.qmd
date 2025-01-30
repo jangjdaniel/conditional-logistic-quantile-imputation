@@ -1,8 +1,76 @@
 ```{r}
 library(tidyverse)
+library(missMethods)
+library(quantreg)
 ```
 
 ```{r}
+#initial data generation
+
 set.seed(2025)
-rchisq(1, df = 2)
+
+my_data <- data.frame(
+  original_data = rchisq(1000, df = 5)) #skewed distribution for imputation testing
+
+hist(my_data$original_data)
+```
+
+```{r}
+#mechanism to make missing data (from https://cran.r-project.org/web/packages/missMethods/vignettes/Generating-missing-values.html)
+
+make_missing <- delete_MCAR(my_data, 0.5, "original_data") #half the data is gone now
+```
+
+```{r, eval=FALSE}
+#the stata code that was provided for me
+
+#local pick_uniform = runiform(0.001, .01)
+ #                                       qreg y_t, quantile(`pick_uniform')
+  #                                      replace y_imp = _b[_cons]  in `i'
+
+#now some quantreg fun
+data(mtcars)
+rq(mpg ~ wt, data = mtcars, tau = seq(0, 1, by = 0.01)) #example code in getting all 99 quantiles
+
+#now with our data
+rq(mpg ~ wt, data = mtcars)
+```
+
+```{r}
+#the algorithm to impute missing completely at random values
+
+imputation_process <- function(full_data) {
+  unif_value <- round(runif(1, min = 0, max = 1), 2)
+  quant_reg_coeff <- rq(original_data ~ 1, data = full_data, tau=unif_value) #why is this 1?
+  value <- coef(quant_reg_coeff)[1]
+  
+  return(value)
+
+}
+
+#finally, return value of quantile regression
+
+imputation_process(my_data)
+
+```
+
+```{r}
+#then perform the algorithm on make_missing
+
+make_missing <- make_missing |>
+  mutate(imputed_data = ifelse(is.na(original_data),
+                               imputation_process(my_data), 
+                               original_data)) |>
+  select(imputed_data)
+
+#this is such a low level solution but im lazy
+my_data$type <- 'original'
+names(my_data)[names(my_data) == "original_data"] <- "data"
+
+make_missing$type <- 'imputed'
+names(make_missing)[names(make_missing) == "imputed_data"] <- "data"
+
+#now actually show everything here...
+comparison <- rbind(my_data, make_missing)
+ggplot(comparison, aes(data, fill = type)) + geom_density(alpha = 0.2)
 ```
