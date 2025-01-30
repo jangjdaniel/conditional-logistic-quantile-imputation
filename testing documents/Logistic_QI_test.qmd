@@ -106,6 +106,7 @@ ggplot(comparison, aes(data, fill = type)) +
 #it does show that we need to be very careful in choosing our min and max values
 ```
 
+## potential idea to test
 
 ```{r}
 #an idea that I just had
@@ -114,10 +115,75 @@ ggplot(comparison, aes(data, fill = type)) +
 #calculate the quantile proportions that we need to impute and divide it by 100
 #in this case, the quantiles from 0 to 1 is 0.01 to 0.06. generate 99 equidistant quantiles here
 
-
 #then using the basis dataset, impute all missing values from 0 to 1 using these quantiles
 #profit?
 
 #did I miss something?
 
 ```
+
+Even with 100% missing data from a limited range variable, this method still works decently
+
+```{r}
+#playing around with some ideas:
+min <- 0
+max <- 14
+
+#limit of detection problems
+left_limit <- 1
+right_limit <- 14
+
+#some generalized calculations
+left_lim_dist <- left_limit - min #the distance of the limit of detection
+right_lim_dist <- max - right_limit
+```
+
+```{r}
+#say we had code to show that from 0 to 1 we cannot detect
+test_data <- data.frame(
+  original_data = rf(1000, 6, 4)) #can change to any other distribution: try F and gamma?
+
+test_data <- test_data |>
+  mutate(limited_data = ifelse(original_data > left_limit, original_data, NA)) #systematically missing
+
+#from here, you create a subset of the dataset in this manner
+test_data <- test_data |>
+  mutate(left_basis = ifelse(original_data <= left_limit, original_data, NA)) #the basis for the limited range
+
+#we probably need over 100 observations to create an accurate enough basis, but we can check this further
+sum(!is.na(test_data$left_basis)) 
+```
+
+```{r}
+#similar to previous function, but using left_basis
+imputation_process_limited <- function(limited_data) {
+  suppressWarnings({ #thanks stackexchange
+    unif_value <- round(runif(1, min = 0, max = 1), 2) #sample from Unif(0,1) and round to hundredths
+    quant_reg_coeff <- rq(left_basis ~ 1, data = limited_data, tau=unif_value)
+    value <- coef(quant_reg_coeff)[1]
+  })
+}
+
+#similar for loop we did before
+for (i in 1:nrow(test_data)) {
+  if (is.na(test_data$limited_data[i])) {
+    quantile_value <- imputation_process_limited(test_data) #from basis dataset
+    test_data$limited_data[i] <- quantile_value
+  }
+  else {
+    test_data$limited_data[i] <- test_data$limited_data[i]
+  }
+}
+
+#wow it works decently well... should do this 1000 times to confirm
+ggplot(test_data) +
+  geom_density(aes(x = original_data, fill = "original"), alpha = 0.5) +
+  geom_density(aes(x = limited_data, fill = "imputed"), alpha = 0.5) + 
+  xlim(0,10)
+
+ggplot(test_data) +
+  geom_density(aes(x = original_data, fill = "original"), alpha = 0.5) +
+  geom_density(aes(x = limited_data, fill = "imputed"), alpha = 0.5) + 
+  xlim(0,1)
+```
+
