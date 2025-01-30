@@ -31,7 +31,7 @@ max <- 14 #for the sake of demonstration, let's create this cutoff
 count(my_data |> filter(original_data > 14)) #as we can see, 10 of the 1000 obs are out of the range
 
 my_data <- my_data |>
-  mutate(transformed_data = (log(original_data) - min) / (max - log(original_data)))
+  mutate(transformed_data = log((original_data - min) / (max - original_data)))
 
 ggplot(data = my_data, aes(x=transformed_data)) +
   geom_density()
@@ -43,18 +43,81 @@ make_missing <- delete_MCAR(my_data, 0.5, "original_data") #half the data is gon
 
 #likely a better way to approach this, but I'm lazy. R has gotten better with for loops
 for(i in 1:nrow(make_missing)) {
- #ie if [i] is NA, then make transformed_data NA as well 
+  if(is.na(make_missing$original_data[i])) {
+    make_missing$transformed_data[i] <- NA
+  }
 }
 ```
 
-
 ```{r}
 #conditional quantile function with my_data and transformed_data!
+imputation_process_logistic <- function(full_data) {
+  suppressWarnings({ #thanks stackexchange
+    unif_value <- round(runif(1, min = 0, max = 1), 2) #sample from Unif(0,1) and round to hundredths
+    quant_reg_coeff <- rq(transformed_data ~ 1, data = full_data, tau=unif_value) #why is this 1?
+    value <- coef(quant_reg_coeff)[1]
+  })
+  return(value)
+}
 ```
-
 
 ```{r}
 #this time, the fitted values can only be within a certain range, so when un-transforming it, we should never observe a value outside of (min, max)
+
+for (i in 1:nrow(make_missing)) {
+  if (is.na(make_missing$transformed_data[i])) {
+    quantile_value <- imputation_process_logistic(my_data) #from basis dataset
+    make_missing$imputed_data[i] <- quantile_value
+  }
+  else {
+    make_missing$imputed_data[i] <- make_missing$transformed_data[i]
+  }
+}
+```
+
+```{r}
+#untransform the data
+make_missing <- make_missing |>
+  mutate(untransformed_imputed_data = (exp(imputed_data)*max + min) / (1+exp(imputed_data)))
+```
+
+```{r}
+#consistency
+my_data <- my_data |>
+  select(original_data) |>
+  mutate(type = "original") |>
+  rename(data = "original_data")
+
+make_missing <- make_missing |>
+  select(untransformed_imputed_data) |>
+  mutate(type = "imputed") |>
+  rename(data = "untransformed_imputed_data")
+
+#concatenating
+comparison <- rbind(my_data, make_missing)
+rm(my_data)
+rm(make_missing)
+
+#the plot: the imputation technique works!
+ggplot(comparison, aes(data, fill = type)) + 
+  geom_density(alpha = 0.2)
+
+#quick note: changing max to a value like 6 shows that the limited range works!
+#it does show that we need to be very careful in choosing our min and max values
 ```
 
 
+```{r}
+#an idea that I just had
+#say that we have a case where 0 to 1 is systematically missing and 1 to 14 is detected
+#look at the range of a variable from the basis dataset
+#calculate the quantile proportions that we need to impute and divide it by 100
+#in this case, the quantiles from 0 to 1 is 0.01 to 0.06. generate 99 equidistant quantiles here
+
+
+#then using the basis dataset, impute all missing values from 0 to 1 using these quantiles
+#profit?
+
+#did I miss something?
+
+```
