@@ -1,0 +1,64 @@
+```{r}
+library(tidyverse)
+```
+
+```{r}
+#logit and expit functions for myself
+logit <- function(prob) {
+  value <- log(prob / (1 - prob))
+  return(value)
+}
+
+expit <- function(prob) {
+  value <- 1 / (1 + exp(-(prob)))
+  return(value)
+}
+```
+
+```{r}
+#function to create data
+create_data <- function(sample_size, 
+                        a_0 = logit(0.3), a_1 = log(1.1), 
+                        b_0 = logit(0.1), b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
+  
+  #initialize everything
+  n <- sample_size
+  
+  #step 1: Base Binary Predictor
+  V <- rbinom(n, size = 1, prob = 0.4)
+  
+  #step 2: cnfounder with a skewed distribution... Biomarker missing
+  C1 <- rchisq(n, df = 5) 
+  C2 <- rnorm(n, mean = 75, sd = 7) #another confounder with a normal distribution. not used right now
+  
+  #step 3: generating exposure variable based on confounders (probability)
+  E <- expit(a_0 + a_1*C1)
+  
+  #step 4: generating outcome based on confounders, exposure, and base binary predictor
+  O <- expit(b_0 + b_1*E + b_2*V + b_3*C1)
+  
+  #step 5: create dataset
+  
+  my_data <- data.frame(
+    predictor = V,
+    confounder_1 = C1,
+    confounder_2 = C2,
+    exposure = E,
+    outcome = O
+  )
+  
+  return(my_data)
+} 
+```
+
+```{r, eval=FALSE}
+#validation
+toy_data <- create_data(1000)
+
+#doing the regression
+toy_results <- glm(outcome ~ exposure + predictor + confounder_1, 
+                   family="binomial", 
+                   data=toy_data)
+
+summary(toy_results) #the coeffiecents are exactly the logit inputs we gave in the function! 
+```
