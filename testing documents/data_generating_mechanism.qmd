@@ -62,3 +62,37 @@ toy_results <- glm(outcome ~ exposure + predictor + confounder_1,
 
 summary(toy_results) #the coeffiecents are exactly the logit inputs we gave in the function! 
 ```
+
+```{r}
+#multivariate normal beta coefficient generation
+library(MASS)
+
+#our variability
+tau_2 <- 0.01 
+
+#beta coefficients
+b_1 <- log(1.5)
+b_2 <- log(0.7)
+b_3 <- log(1.2)
+beta_vector <- c(b_1, b_2, b_3)
+
+#variance-covariance matrix
+matrix_size <- length(beta_vector)
+diag_mat <- matrix(0, matrix_size, matrix_size) 
+diag(diag_mat) <- 1 #make all the diagonals 1 for the identity matrix
+
+#lastly, we need to perform the calculation specified in section 3.1.4
+beta_matrix <- sqrt(tau_2) * diag_mat
+
+#multivariate normal function
+a <- mvrnorm(1000, beta_vector, beta_matrix)
+a <- as.data.frame(a)
+
+#checking that the averages of the coefficients are close to our original values
+exp(mean(a$V1))
+exp(mean(a$V2))
+exp(mean(a$V3))
+
+#it works!!
+```
+
