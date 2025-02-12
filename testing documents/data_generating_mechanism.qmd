@@ -1,5 +1,6 @@
 ```{r}
 library(tidyverse)
+library(MASS) #multivariate normal beta coefficient generation
 ```
 
 ```{r}
@@ -15,8 +16,8 @@ expit <- function(prob) {
 }
 ```
 
-```{r}
-#function to create data
+```{r, eval=FALSE}
+#function to create data: one study case for demonstration purposes only
 create_data <- function(sample_size, 
                         a_0 = logit(0.3), a_1 = log(1.1), 
                         b_0 = logit(0.1), b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
@@ -63,10 +64,7 @@ toy_results <- glm(outcome ~ exposure + predictor + confounder_1,
 summary(toy_results) #the coeffiecents are exactly the logit inputs we gave in the function! 
 ```
 
-```{r}
-#multivariate normal beta coefficient generation
-library(MASS)
-
+```{r, eval=FALSE}
 #our variability
 tau_2 <- 0.01 
 
@@ -80,7 +78,7 @@ beta_vector <- c(b_1, b_2, b_3)
 matrix_size <- length(beta_vector)
 diag_mat <- matrix(0, matrix_size, matrix_size) 
 diag(diag_mat) <- 1 #make all the diagonals 1 for the identity matrix
-
+  
 #lastly, we need to perform the calculation specified in section 3.1.4
 beta_matrix <- sqrt(tau_2) * diag_mat
 
@@ -95,4 +93,70 @@ exp(mean(a$V3))
 
 #it works!!
 ```
+
+
+
+
+
+
+Now we will combine these two ideas to create multiple data sets with multiple confounding mechanisms
+
+```{r}
+coefficient_generator <- function(tau, num_studies, 
+                                  a_0 = logit(0.3), a_1 = log(1.1), 
+                                  b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
+    
+  #allow a_1 to vary
+  alpha_coefficients <- rnorm(num_studies, a_1, tau)
+  alpha_coefficients <- as.data.frame(alpha_coefficients) #make into data frame
+  
+  #now doing the beta coefficients
+  beta_vector <- c(b_1, b_2, b_3)
+  
+    #variance-covariance matrix
+    matrix_size <- length(beta_vector)
+    diag_mat <- matrix(0, matrix_size, matrix_size) 
+    diag(diag_mat) <- 1 #make all the diagonals 1 for the identity matrix
+    
+    #lastly, we need to perform the calculation specified in section 3.1.4
+    beta_matrix <- tau * diag_mat
+    beta_coefficients <- mvrnorm(num_studies, beta_vector, beta_matrix)
+    beta_coefficients <- as.data.frame(beta_coefficients)
+  
+  #now combine these results
+  coefficients <- cbind(alpha_coefficients, beta_coefficients)
+  
+  return(coefficients)
+}
+
+set.seed(495)
+toy_coefficients <- coefficient_generator(tau = 0.01, num_studies = 20) #20 studies with the beta coefficient
+```
+
+```{r, eval=FALSE}
+#how to work with this in the next function: we need to take in a dataframe created by coefficient_generator... two steps!
+
+iteration <- 1
+
+study_1 <- as.numeric(toy_coefficients[iteration,])
+study_1
+```
+
+Not 100% sure how I'm going to structure this function...
+I also don't know if I'm going to keep the sample size homogeneous... maybe allow a vector to be passed through, or create random var.
+
+```{r}
+create_multiple_datasets <- function(tau, num_studies, sample_size) {#recall all coefficients are stored in coefficient_generator funct
+  my_coefficients <- coefficient_generator(tau, num_studies)
+  
+  return(my_coefficients) #just making sure things work here...
+  
+}
+
+
+
+create_multiple_datasets(tau = 0.01, num_studies = 20, sample_size = 1000)
+```
+
+
 

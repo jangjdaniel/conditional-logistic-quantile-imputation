@@ -84,12 +84,12 @@ make_missing <- make_missing |>
 ```{r}
 #consistency
 my_data <- my_data |>
-  select(original_data) |>
+  dplyr::select(original_data) |>
   mutate(type = "original") |>
   rename(data = "original_data")
 
 make_missing <- make_missing |>
-  select(untransformed_imputed_data) |>
+  dplyr::select(untransformed_imputed_data) |>
   mutate(type = "imputed") |>
   rename(data = "untransformed_imputed_data")
 
@@ -106,22 +106,7 @@ ggplot(comparison, aes(data, fill = type)) +
 #it does show that we need to be very careful in choosing our min and max values
 ```
 
-## potential idea to test
-
-```{r}
-#an idea that I just had
-#say that we have a case where 0 to 1 is systematically missing and 1 to 14 is detected
-#look at the range of a variable from the basis dataset
-#calculate the quantile proportions that we need to impute and divide it by 100
-#in this case, the quantiles from 0 to 1 is 0.01 to 0.06. generate 99 equidistant quantiles here
-
-#then using the basis dataset, impute all missing values from 0 to 1 using these quantiles
-#profit?
-
-#did I miss something?
-
-```
-
+## Systematically Missing Imputation: 
 Even with 100% missing data from a limited range variable, this method still works decently
 
 ```{r}
@@ -185,5 +170,97 @@ ggplot(test_data) +
   geom_density(aes(x = original_data, fill = "original"), alpha = 0.5) +
   geom_density(aes(x = limited_data, fill = "imputed"), alpha = 0.5) + 
   xlim(0,1)
+```
+
+
+
+
+
+
+
+
+## Imputing with a Basis Study instead of from the same study... allow for some variation in the generation
+
+```{r}
+#an idea that I just had
+#say that we have a case where 0 to 1 is systematically missing and 1 to 14 is detected
+#look at the range of a variable from the basis dataset
+#calculate the quantile proportions that we need to impute and divide it by 100
+#in this case, the quantiles from 0 to 1 is 0.01 to 0.06. generate 99 equidistant quantiles here
+
+#then using the basis dataset, impute all missing values from 0 to 1 using these quantiles
+#profit?
+
+#did I miss something?
+
+```
+
+```{r}
+#logit transformation and its inverse as a function
+
+log_quant_transform <- function(value, min, max) {
+  new_value <- log((value - min) / (max - value))
+  return(new_value)
+}
+
+inv_log_quant_transform <- function(value, min, max) {
+  new_value <- (exp(value)*max + min) / (1+exp(value))
+  return(new_value)
+}
+```
+
+```{r}
+#create our data
+set.seed(495)
+sample_size <- 1000
+study_A  <- data.frame(A_data = rchisq(sample_size, df = 3))
+study_B <- data.frame(B_data = rchisq(sample_size, df = 3)) #the basis study
+
+#for study B, take out all values below the 25th quantile
+quarter_quantile_B <- as.double(quantile(study_B$B_data, 0.25))
+
+study_B <- study_B |>
+  mutate(B_data_missing = ifelse(B_data > quarter_quantile_B, B_data, NA))
+  
+#seeing the missing data through histogram
+ggplot(study_B) +
+  geom_histogram(aes(x = B_data, fill = "original"), alpha = 0.5) +
+  geom_histogram(aes(x = B_data_missing, fill = "missing"), alpha = 0.5)
+```
+
+```{r}
+#another exploratory plot... looking at study A and B's histograms (thanks ChatGPT for making this less painful)
+combined_data <- data.frame(
+  value = c(study_A$A_data, study_B$B_data),
+  study = rep(c("Study A", "Study B"), times = c(length(study_A$A_data), length(study_B$B_data)))
+)
+
+# Create the plot
+ggplot(combined_data, aes(x = value, fill = study)) +
+  geom_histogram(alpha = 0.5, position = "identity", bins = 30, color = "black") +
+  scale_fill_manual(values = c("skyblue", scales::alpha("red", 0.5))) +
+  geom_vline(xintercept  = quarter_quantile_B) + #this is where the data will go missing... 
+  theme_minimal() +
+  theme(legend.title = element_blank()) 
+```
+
+```{r}
+#from study B, get the min and max for missing values... send that information to study A
+min <- 0
+max <- quarter_quantile_B
+
+#study A does some transformation nonsense to send a lot of detailed information for within this range
+
+
+
+
+#send the 99? or something number of quantiles back to study B to impute
+
+
+
+```
+
+```{r}
+#now check if the imputed values for study B look good overall
 ```
 
