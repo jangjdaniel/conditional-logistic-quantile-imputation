@@ -200,12 +200,25 @@ ggplot(test_data) +
 
 log_quant_transform <- function(value, min, max) {
   new_value <- log((value - min) / (max - value))
-  return(new_value)
+  
+  if (is.nan(new_value)) {return(NA)} 
+  else {return(new_value)}
 }
 
 inv_log_quant_transform <- function(value, min, max) {
   new_value <- (exp(value)*max + min) / (1+exp(value))
   return(new_value)
+}
+```
+
+```{r}
+#imputation function
+imputation_process <- function(limited_data) {
+  suppressWarnings({ #thanks stackexchange
+    unif_value <- round(runif(1, min = 0, max = 1), 2) #sample from Unif(0,1) and round to hundredths
+    quant_reg_coeff <- rq(left_basis ~ 1, data = limited_data, tau=unif_value)
+    value <- coef(quant_reg_coeff)[1]
+  })
 }
 ```
 
@@ -248,19 +261,57 @@ ggplot(combined_data, aes(x = value, fill = study)) +
 #from study B, get the min and max for missing values... send that information to study A
 min <- 0
 max <- quarter_quantile_B
+quantile_from_B <- 0.25 #calculate prop of missing values and that's the quantile value to give us
 
 #study A does some transformation nonsense to send a lot of detailed information for within this range
+study_A <- study_A |>
+  mutate(A_data_transformed = sapply(A_data, log_quant_transform, min = min, max = max))
 
+#now storing the coefficients we need 
+A_coeff_transformed <- c()
 
-
-
-#send the 99? or something number of quantiles back to study B to impute
-
-
-
+for(i in seq(0, quantile_from_B, by = 0.01)) {
+  quant_reg_coeff <- rq(A_data_transformed ~ 1, data = study_A, tau=i)
+  iteration <- i*100 + 1
+  A_coeff_transformed[iteration] <- coef(quant_reg_coeff)[1]
+}
 ```
 
 ```{r}
-#now check if the imputed values for study B look good overall
+#send the information over
+imputation_process <- function(B_dataset, basis_coefficients, min, max) {
+  suppressWarnings({ #thanks stackexchange
+    unif_value_adj <- rbeta(1, shape1 = 12, shape2 = 9) / (1/quantile_from_B)*100 #from 1 to 26 in our case
+    unif_value_adj <- round(unif_value_adj) #just round
+    
+    #getting value
+    value <- basis_coefficients[unif_value_adj]
+    value <- inv_log_quant_transform(value, min, max)
+    
+    return(value)
+    
+  })
+}
+
+#similar for loop we did before
+for (i in 1:nrow(study_B)) {
+  if (is.na(study_B$B_data_missing[i])) {
+    quantile_value <- imputation_process(study_B, A_coeff_transformed, min, max) #from basis dataset
+    study_B$B_data_missing[i] <- quantile_value
+  }
+  else {
+    study_B$B_data_missing[i] <- study_B$B_data_missing[i]
+  }
+}
+
+ggplot(study_B) +
+  geom_histogram(aes(x = B_data, fill = "original"), alpha = 0.5) +
+  geom_histogram(aes(x = B_data_missing, fill = "missing"), alpha = 0.5)
+```
+
+```{r}
+#looks terrible, maybe we can use a beta distribution, with beta(1,1) as a starting point since that's a uniform
+
+rbeta(1, shape1 = 2, shape2 = 3) #a bit more skewed?
 ```
 
