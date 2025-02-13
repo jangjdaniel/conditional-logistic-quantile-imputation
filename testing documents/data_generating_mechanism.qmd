@@ -90,7 +90,6 @@ a <- as.data.frame(a)
 exp(mean(a$V1))
 exp(mean(a$V2))
 exp(mean(a$V3))
-
 #it works!!
 ```
 
@@ -106,10 +105,26 @@ coefficient_generator <- function(tau, num_studies,
                                   a_0 = logit(0.3), a_1 = log(1.1), 
                                   b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
     
+  
+  
+  #create which number study we have
+  study_counts <- data.frame(id = 1:num_studies)
+  
+  study_counts <- study_counts |>
+    mutate(study_num = paste("Study", id)) |>
+    dplyr::select(study_num)
+  
   #allow a_1 to vary
   alpha_coefficients <- rnorm(num_studies, a_1, tau)
   alpha_coefficients <- as.data.frame(alpha_coefficients) #make into data frame
   
+      #renaming for better binding experience + adding a_0... not important here
+      alpha_coefficients <- alpha_coefficients |> 
+        mutate(a_0 = a_0) |>
+        rename(a_1 = "alpha_coefficients") |>
+        dplyr::select(a_0, a_1) #reordering
+  
+      
   #now doing the beta coefficients
   beta_vector <- c(b_1, b_2, b_3)
   
@@ -122,15 +137,18 @@ coefficient_generator <- function(tau, num_studies,
     beta_matrix <- tau * diag_mat
     beta_coefficients <- mvrnorm(num_studies, beta_vector, beta_matrix)
     beta_coefficients <- as.data.frame(beta_coefficients)
-  
+    
+      #renaming for better binding experience
+      beta_coefficients <- beta_coefficients |> 
+        rename(b_1 = "V1", b_2 = "V2", b_3 = "V3")
+      
   #now combine these results
-  coefficients <- cbind(alpha_coefficients, beta_coefficients)
+  coefficients <- cbind(study_counts, alpha_coefficients, beta_coefficients)
   
   return(coefficients)
 }
 
-set.seed(495)
-toy_coefficients <- coefficient_generator(tau = 0.01, num_studies = 20) #20 studies with the beta coefficient
+coefficient_generator(tau = 0.01, num_studies = 30)
 ```
 
 ```{r, eval=FALSE}
@@ -145,18 +163,87 @@ study_1
 Not 100% sure how I'm going to structure this function...
 I also don't know if I'm going to keep the sample size homogeneous... maybe allow a vector to be passed through, or create random var.
 
-```{r}
-create_multiple_datasets <- function(tau, num_studies, sample_size) {#recall all coefficients are stored in coefficient_generator funct
-  my_coefficients <- coefficient_generator(tau, num_studies)
-  
-  return(my_coefficients) #just making sure things work here...
-  
-}
+The function's steps:
+1) Take in a dataset that has study_num and the alpha/beta coefficients 
+  *note that a_0 and sample_size need to be added in this function... maybe add a_0 in other function?*
+2) Iterate through the amount of studies we have and create data (with the mechanism described way above)
+3) Store one iteration in a list of the same index and keep going
+4) The output should be a list of however mnany study_num we had in the previous function
 
+*note that this function does not do it all. you need to create the study_coefficient_dataset prior to this
 
-
-create_multiple_datasets(tau = 0.01, num_studies = 20, sample_size = 1000)
+```{r, eval=FALSE}
+#my testing realm
+my_list[[1]] <- data.frame(x = "ooga", y = "booga")
+my_list[[1]]
 ```
 
+```{r}
+#this will be nested to make the list function cleaner to read
+create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3) {
+  
+  #initialize everything
+  n <- sample_size
+  
+  #step 1: Base Binary Predictor
+  V <- rbinom(n, size = 1, prob = 0.4)
+  
+  #step 2: cnfounder with a skewed distribution... Biomarker missing
+  C1 <- rchisq(n, df = 5) 
+  C2 <- rnorm(n, mean = 75, sd = 7) #another confounder with a normal distribution. not used right now
+  
+  #step 3: generating exposure variable based on confounders (probability)
+  E <- expit(a_0 + a_1*C1)
+  
+  #step 4: generating outcome based on confounders, exposure, and base binary predictor
+  O <- expit(b_0 + b_1*E + b_2*V + b_3*C1)
+  
+  #step 5: create dataset
+  
+  my_data <- data.frame(
+    predictor = V,
+    confounder_1 = C1,
+    confounder_2 = C2,
+    exposure = E,
+    outcome = O
+  )
+  
+  return(my_data)
+} 
+
+#test case: take study 1 from our generated coefficients and apply this function onto it!
+test_case <- coefficient_generator(tau = 0.01, num_studies = 30) |>
+  dplyr::slice_head(n = 1) 
+```
+
+```{r}
+#recall all coefficients are stored in coefficient_generator funct
+create_multiple_datasets <- function(study_coefficient_dataset, sample_size) {
+  my_list <- list() #initialize empty list
+  
+  for(i in 1:nrow(study_coefficient_dataset)) {
+    #do the data generating mechanism
+    a_0 <- NA #do we need this...
+    a_1 <- NA
+    
+    
+    my_data <- NA 
+    
+    #finally, return the list
+    my_list[[i]] <- my_data
+  
+  }
+  
+  return(my_list)
+}
+```
+
+```{r}
+#the two functions in play... creates all our meta analysis data, as well as a separate dataset
+#showing the underlying coefficients that make this all work!
+
+my_coefficients <- coefficient_generator(tau = 0.01, num_studies = 30)
+meta_analysis_data <- create_multiple_datasets(my_coefficients, sample_size = 500)
+```
 
 
