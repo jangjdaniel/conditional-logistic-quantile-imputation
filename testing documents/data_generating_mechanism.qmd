@@ -96,14 +96,12 @@ exp(mean(a$V3))
 
 
 
-
-
 Now we will combine these two ideas to create multiple data sets with multiple confounding mechanisms
 
 ```{r}
 coefficient_generator <- function(tau, num_studies, 
                                   a_0 = logit(0.3), a_1 = log(1.1), 
-                                  b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
+                                  b_0 = logit(0.1), b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
     
   
   
@@ -140,7 +138,9 @@ coefficient_generator <- function(tau, num_studies,
     
       #renaming for better binding experience
       beta_coefficients <- beta_coefficients |> 
-        rename(b_1 = "V1", b_2 = "V2", b_3 = "V3")
+        mutate(b_0 = b_0) |>
+        rename(b_1 = "V1", b_2 = "V2", b_3 = "V3") |>
+        dplyr::select(b_0, b_1, b_2, b_3)
       
   #now combine these results
   coefficients <- cbind(study_counts, alpha_coefficients, beta_coefficients)
@@ -176,6 +176,22 @@ The function's steps:
 #my testing realm
 my_list[[1]] <- data.frame(x = "ooga", y = "booga")
 my_list[[1]]
+
+#test case: take study 1 from our generated coefficients and apply this function onto it!
+test_case <- coefficient_generator(tau = 0.01, num_studies = 30) |>
+  dplyr::slice_head(n = 2) 
+
+test_case[1,]$a_0
+test_case[1,]$a_1
+test_case[1,]$b_0
+test_case[1,]$b_1
+test_case[1,]$a_0
+test_case[1,]$a_0
+
+
+#another way to do this with dplyr... might be better, since we create vectors
+a_0_values <- test_case |> dplyr::pull(a_0)
+a_0_values[1]
 ```
 
 ```{r}
@@ -210,10 +226,6 @@ create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3) {
   
   return(my_data)
 } 
-
-#test case: take study 1 from our generated coefficients and apply this function onto it!
-test_case <- coefficient_generator(tau = 0.01, num_studies = 30) |>
-  dplyr::slice_head(n = 1) 
 ```
 
 ```{r}
@@ -221,19 +233,35 @@ test_case <- coefficient_generator(tau = 0.01, num_studies = 30) |>
 create_multiple_datasets <- function(study_coefficient_dataset, sample_size) {
   my_list <- list() #initialize empty list
   
+  #pulling all values we need
+  a_0_values <- study_coefficient_dataset |> dplyr::pull(a_0)
+  a_1_values <- study_coefficient_dataset |> dplyr::pull(a_1)
+  b_0_values <- study_coefficient_dataset |> dplyr::pull(b_0)
+  b_1_values <- study_coefficient_dataset |> dplyr::pull(b_1)
+  b_2_values <- study_coefficient_dataset |> dplyr::pull(b_2)
+  b_3_values <- study_coefficient_dataset |> dplyr::pull(b_3)
+  
   for(i in 1:nrow(study_coefficient_dataset)) {
     #do the data generating mechanism
-    a_0 <- NA #do we need this...
-    a_1 <- NA
+    a_0 <- a_0_values[i]
+    a_1 <- a_1_values[i]
+    b_0 <- b_0_values[i]
+    b_1 <- b_1_values[i]
+    b_2 <- b_2_values[i]
+    b_3 <- b_3_values[i]
+    
+    #apply the data generating mechanism function from the values above
+    my_data <- create_data(sample_size = sample_size, 
+                           a_0 = a_0, a_1 = a_1, 
+                           b_0 = b_0, b_1 = b_1, b_2 = b_2, b_3 = b_3)
     
     
-    my_data <- NA 
-    
-    #finally, return the list
+    #finally, add this dataset to our list
     my_list[[i]] <- my_data
   
   }
   
+  #return the list
   return(my_list)
 }
 ```
@@ -242,8 +270,17 @@ create_multiple_datasets <- function(study_coefficient_dataset, sample_size) {
 #the two functions in play... creates all our meta analysis data, as well as a separate dataset
 #showing the underlying coefficients that make this all work!
 
-my_coefficients <- coefficient_generator(tau = 0.01, num_studies = 30)
+my_coefficients <- coefficient_generator(tau = 0.01, num_studies = 5)
 meta_analysis_data <- create_multiple_datasets(my_coefficients, sample_size = 500)
 ```
 
+Now we need a mechanism to make these values go systematically missing for a certain range
+Say the LoD ranges from 0.8 to 1.2 across different study sites
+We have at least one study (say study 1) that has all observed values
+*we can also test if this method works if there is 10% missing observations in this range*
+We need to know from the other study cites how many quantiles they need for imputation
+
+```{r}
+
+```
 
