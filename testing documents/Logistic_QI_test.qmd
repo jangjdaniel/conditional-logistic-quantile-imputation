@@ -124,11 +124,14 @@ imputation_process_limited <- function(limited_data) {
 }
 ```
 
+"Data generating mechanism" made simple. In the future, Study A and Study B can have degrees of freedom that vary a lot
+Sensitivity Analysis to see how different our population distributions can be before this method breaks down
+
 ```{r}
 #create our data
 sample_size <- 1000
-study_A  <- data.frame(A_data = rf(sample_size, 6, 4)) #the basis study
-study_B <- data.frame(B_data = rf(sample_size, 6, 8)) 
+study_A  <- data.frame(A_data = rchisq(sample_size, df = 5)) #the basis study
+study_B <- data.frame(B_data = rchisq(sample_size, df = 3)) #rf(sample_size, 6, 8)
 
 #simulation scenario: data from 0 to 1 in study B is missing, but A is all observed
 min <- 0
@@ -150,6 +153,7 @@ ggplot(study_B) +
 What we need to do is create a basis of imputation with Study A. 
 This means Study B needs to send their left and right limits to Study A
 Make sure that this value is also transformed with the log scale based on the min and max given
+*Study B should also send proportion of data missing to get the quantiles necessary*
 
 ```{r}
 study_A <- study_A |>
@@ -158,6 +162,9 @@ study_A <- study_A |>
 ```
 
 Then, Study A needs to do the quantile regression algorithm and store the quantiles in a vector to send to study B
+*an idea here: we should calculate up to what quantile is Study B missing data in*
+*then use that for the number of iterations we do right now*
+*this is what Nicola did, but for now, since it works, keep this*
 
 ```{r}
 study_A_coefficients <- c() #initialize vector
@@ -182,6 +189,9 @@ study_A_coefficients
 Now that we have a basis of imputation, we send this to study B's site for them to apply the imputation algorithm
 
 ```{r}
+study_B <- study_B |>
+  mutate(imputation_indicator = NA)
+
 for (i in 1:nrow(study_B)) {
   if (is.na(study_B$B_data_missing[i])) { #if we have a missing value, apply this algorithm
     unif_value <- runif(1, min = 0, max = 0.99) * 100
@@ -193,9 +203,11 @@ for (i in 1:nrow(study_B)) {
     
     #then we impute
     study_B$B_data_missing[i] <- value
+    study_B$imputation_indicator[i] <- 1 #indicates imputed
   }
   else {
-    study_B$B_data_missing[i] <- study_B$B_data_missing[i]
+    study_B$B_data_missing[i] <- study_B$B_data_missing[i] #we use original value
+    study_B$imputation_indicator[i] <- 0 #indicates not imputed
   }
 }
 ```
@@ -207,3 +219,37 @@ ggplot(study_B) +
   xlim(0, 3)
 ```
 
+
+We can now try and compare this imputation from a different dataset with a naive estimate
+*note that these datasets must contain an imputation_indicator variable*
+
+```{r}
+#this function adds constant imputations
+
+naive_constant_imputation <- function(my_data, full_variable, min, max) {
+  
+  LoD <- max - min #this is the Limit of Detection range
+  
+  my_data <- my_data |>
+    mutate(constant_sqrt2 = ifelse(imputation_indicator == 1, LoD / sqrt(2), !!sym(full_variable)),
+           constant_2 = ifelse(imputation_indicator == 1, LoD / 2, !!sym(full_variable))) #LoD / sqrt(2)
+  
+  return(my_data)
+  
+}
+
+naive_constant_imputation(study_B, "B_data", min = 0, max = 1)
+```
+
+
+```{r}
+complete_case_analysis_estimate <- function(my_data, full_variable) {
+  
+  my_data <- my_data |>
+    mutate(complete_case = ifelse(imputation_indicator == 1, NA, !!sym(full_variable)))
+  
+  return(my_data)
+}
+
+complete_case_analysis_estimate(study_B, "B_data")
+```
