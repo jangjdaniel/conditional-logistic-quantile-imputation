@@ -1,0 +1,89 @@
+```{r}
+#necessary libraries
+library(tidyverse)
+library(quantreg)
+```
+
+For simplicity, we are in the case where we don't need multiple datasets, just two
+
+```{r}
+set.seed(605)
+```
+
+
+```{r}
+create_simple_data <- function(sample_size, 
+                        a_0 = logit(0.3), a_1 = log(1.1), 
+                        b_0 = logit(0.1), b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
+  
+  #initialize everything
+  n <- sample_size
+  
+  #step 1: Base Binary Predictor
+  V <- rbinom(n, size = 1, prob = 0.4)
+  
+  #step 2: cnfounder with a skewed distribution... Biomarker missing
+  C1 <- rchisq(n, df = 5) 
+  C2 <- rnorm(n, mean = 75, sd = 7) #another confounder with a normal distribution. not used right now
+  
+  #step 3: generating exposure variable based on confounders (probability)
+  E <- expit(a_0 + a_1*C1)
+  
+  #step 4: generating outcome based on confounders, exposure, and base binary predictor
+  O <- expit(b_0 + b_1*E + b_2*V + b_3*C1)
+  
+  #step 5: create dataset
+  
+  my_data <- data.frame(
+    predictor = V,
+    confounder_1 = C1,
+    confounder_2 = C2,
+    exposure = E,
+    outcome = O
+  )
+  
+  return(my_data)
+} 
+```
+
+```{r}
+#make our datasets here
+basis_dataset <- create_simple_data(sample_size = 500)
+missing_dataset <- create_simple_data(sample_size = 500)
+```
+
+Is this what I should expect?
+
+```{r}
+median <- rq(confounder_1 ~ exposure + outcome + confounder_2, data = basis_dataset, tau=0.50)
+median[1]
+
+third <- rq(confounder_1 ~ exposure + outcome + confounder_2, data = basis_dataset, tau=0.75)
+third[1]
+```
+
+Logistic Transform needed
+
+Conditional (Logistic) Quantile Regression on the Basis Dataset
++ Save the results to send to Study B
+
+
+```{r}
+for(i in seq(0.01:0.99, by=0.01)) {
+  coefficients <- rq(confounder_1 ~ exposure + outcome + confounder_2, data = basis_dataset, tau=i)
+  i <- 0.01
+  
+  coefficients[1]
+}
+
+
+#then save these values
+```
+
+For Study B: 10 Iterations of this result with each result being saved
+
+```{r}
+
+```
+
+
