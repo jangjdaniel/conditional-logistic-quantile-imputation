@@ -5,16 +5,96 @@ library(quantreg)
 ```
 
 For simplicity, we are in the case where we don't need multiple datasets, just two
+*load functions from data_generating_mechanism.qmd*
 
 ```{r}
-set.seed(605)
+#logit and expit functions for myself
+logit <- function(prob) {
+  value <- log(prob / (1 - prob))
+  return(value)
+}
+
+expit <- function(prob) {
+  value <- 1 / (1 + exp(-(prob)))
+  return(value)
+}
+
+#now some other transformation functions
+log_quant_transform <- function(value, min, max) {
+  new_value <- log((value - min) / (max - value))
+  
+  if (is.nan(new_value)) {return(NA)} 
+  else {return(new_value)}
+}
+
+inv_log_quant_transform <- function(value, min, max) {
+  new_value <- (exp(value)*max + min) / (1+exp(value))
+  return(new_value)
+}
 ```
 
+```{r}
+coefficient_generator <- function(tau, num_studies, 
+                                  a_0 = logit(0.3), a_1 = log(1.1), 
+                                  b_0 = logit(0.1), b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
+    
+  #create which number study we have
+  study_counts <- data.frame(id = 1:num_studies)
+  
+  study_counts <- study_counts |>
+    mutate(study_num = paste("Study", id)) |>
+    dplyr::select(study_num)
+  
+  #allow a_1 to vary
+  alpha_coefficients <- rnorm(num_studies, a_1, tau)
+  alpha_coefficients <- as.data.frame(alpha_coefficients) #make into data frame
+  
+      #renaming for better binding experience + adding a_0... not important here
+      alpha_coefficients <- alpha_coefficients |> 
+        mutate(a_0 = a_0) |>
+        rename(a_1 = "alpha_coefficients") |>
+        dplyr::select(a_0, a_1) #reordering
+  
+      
+  #now doing the beta coefficients
+  beta_vector <- c(b_1, b_2, b_3)
+  
+    #variance-covariance matrix
+    matrix_size <- length(beta_vector)
+    diag_mat <- matrix(0, matrix_size, matrix_size) 
+    diag(diag_mat) <- 1 #make all the diagonals 1 for the identity matrix
+    
+    #lastly, we need to perform the calculation specified in section 3.1.4
+    beta_matrix <- tau * diag_mat
+    beta_coefficients <- mvrnorm(num_studies, beta_vector, beta_matrix)
+    beta_coefficients <- as.data.frame(beta_coefficients)
+    
+      #renaming for better binding experience
+      beta_coefficients <- beta_coefficients |> 
+        mutate(b_0 = b_0) |>
+        rename(b_1 = "V1", b_2 = "V2", b_3 = "V3") |>
+        dplyr::select(b_0, b_1, b_2, b_3)
+      
+  #we need to set a LoD value for these studies that has slight variation
+  LoD <- data.frame(LoD = round(runif(num_studies, min = 0.8, max = 1.2), 3))
+  
+  #lastly, we need a range of degrees of freedom for the confounder generation
+  #there will be two just in case I want to use an F distribution
+  deg_freedom <- data.frame(df_1 = round(runif(num_studies, min = 3, max = 7)),
+                            df_2 = round(runif(num_studies, min = 3, max = 7)))
+  
+  #now combine these results
+  coefficients <- cbind(study_counts, alpha_coefficients, beta_coefficients, LoD, deg_freedom)
+  
+  return(coefficients)
+}
+
+#coefficient_generator(tau = 0.01, num_studies = 30)
+```
 
 ```{r}
-create_simple_data <- function(sample_size, 
-                        a_0 = logit(0.3), a_1 = log(1.1), 
-                        b_0 = logit(0.1), b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
+#this will be nested to make the list function cleaner to read
+create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3, df_1, df_2) {
   
   #initialize everything
   n <- sample_size
@@ -23,7 +103,7 @@ create_simple_data <- function(sample_size,
   V <- rbinom(n, size = 1, prob = 0.4)
   
   #step 2: cnfounder with a skewed distribution... Biomarker missing
-  C1 <- rchisq(n, df = 5) 
+  C1 <- rchisq(n, df = df_1) 
   C2 <- rnorm(n, mean = 75, sd = 7) #another confounder with a normal distribution. not used right now
   
   #step 3: generating exposure variable based on confounders (probability)
@@ -47,10 +127,121 @@ create_simple_data <- function(sample_size,
 ```
 
 ```{r}
-#make our datasets here
-basis_dataset <- create_simple_data(sample_size = 500)
-missing_dataset <- create_simple_data(sample_size = 500)
+#recall all coefficients are stored in coefficient_generator funct
+create_multiple_datasets <- function(study_coefficient_dataset, sample_size) {
+  my_list <- list() #initialize empty list
+  
+  #pulling all values we need
+  a_0_values <- study_coefficient_dataset |> dplyr::pull(a_0)
+  a_1_values <- study_coefficient_dataset |> dplyr::pull(a_1)
+  b_0_values <- study_coefficient_dataset |> dplyr::pull(b_0)
+  b_1_values <- study_coefficient_dataset |> dplyr::pull(b_1)
+  b_2_values <- study_coefficient_dataset |> dplyr::pull(b_2)
+  b_3_values <- study_coefficient_dataset |> dplyr::pull(b_3)
+  
+  #also degrees of freedom
+  df_1_values <- study_coefficient_dataset |> dplyr::pull(df_1)
+  df_2_values <- study_coefficient_dataset |> dplyr::pull(df_2) #only if necessary
+  
+  for(i in 1:nrow(study_coefficient_dataset)) {
+    #do the data generating mechanism
+    a_0 <- a_0_values[i]
+    a_1 <- a_1_values[i]
+    b_0 <- b_0_values[i]
+    b_1 <- b_1_values[i]
+    b_2 <- b_2_values[i]
+    b_3 <- b_3_values[i]
+    
+    #also the degrees of freedom
+    df_1 <- df_1_values[i]
+    df_2 <- df_2_values[i]
+    
+    #apply the data generating mechanism function from the values above
+    my_data <- create_data(sample_size = sample_size, 
+                           a_0 = a_0, a_1 = a_1, 
+                           b_0 = b_0, b_1 = b_1, b_2 = b_2, b_3 = b_3,
+                           df_1 = df_1, df_2 = df_2)
+    
+    
+    #finally, add this dataset to our list
+    my_list[[i]] <- my_data
+  
+  }
+  
+  #return the list
+  return(my_list)
+}
 ```
+
+
+
+
+
+Generate my data now
+
+```{r}
+set.seed(605)
+
+#don't forget to load the three functions necessary to make this work
+my_coefficients_basic <- coefficient_generator(tau = 0.01, num_studies = 2)
+my_studies_basic <- create_multiple_datasets(my_coefficients_basic, sample_size = 500)
+```
+
+```{r}
+#doesn't matter which study is the basis study
+basis_study <- as.data.frame(my_studies_basic[1])
+missing_study <- as.data.frame(my_studies_basic[2])
+
+#get rid of the mess
+rm(my_studies_basic)
+```
+
+Now simple mechanism to make LoD data for the missing study. Also count the prop of missing data
+
+```{r}
+#look at my_coefficients and see that randomly selected LoD is 0.912
+missing_study <- missing_study |>
+  mutate(confounder_1_missing = ifelse(confounder_1 >= 0.912, confounder_1, NA))
+
+#count proportion of missingness here: 17.6%
+prop_missing = sum(is.na(missing_study$confounder_1_missing)) / nrow(missing_study)
+prop_missing
+```
+
+View what the confounder 1 looks like
+
+```{r}
+ggplot(missing_study) +
+  geom_histogram(aes(x = confounder_1, fill = "original"), alpha = 0.5) +
+  geom_histogram(aes(x = confounder_1_missing, fill = "imputed"), alpha = 0.5) + 
+  xlim(0,10)
+```
+
+
+STEP 0: Perform a logistic transform of the variable to impute.
+- Min = 0
+- Max = Ceiling of the 99th quantile value. I.e. max of C1 = 77, 99th quantile = 32.3. Max of log transform = 33?
+
+```{r}
+min = 0
+max = ceiling(quantile(basis_study$confounder_1, prob = 0.99))
+
+#the transformation of confounder 1
+```
+
+STEP 1: From basis study, generate quantiles based on variable relationships
+
+```{r, eval=FALSE}
+#test with 1st quartile, median, and 3rd quartile: need to transform them back
+rq(confounder_1 ~ exposure + outcome, data = basis_study, tau=0.25)
+rq(confounder_1 ~ exposure + outcome, data = basis_study, tau=0.50)
+rq(confounder_1 ~ exposure + outcome, data = basis_study, tau=0.75)
+```
+
+
+
+
+
 
 Is this what I should expect?
 
