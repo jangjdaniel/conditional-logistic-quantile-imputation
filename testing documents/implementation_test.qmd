@@ -2,10 +2,11 @@
 #necessary libraries
 library(tidyverse)
 library(quantreg)
+library(MASS)
 ```
 
 For simplicity, we are in the case where we don't need multiple datasets, just two
-*load functions from data_generating_mechanism.qmd*
+*these functions are from data_generating_mechanism.qmd*
 
 ```{r}
 #logit and expit functions for myself
@@ -175,8 +176,6 @@ create_multiple_datasets <- function(study_coefficient_dataset, sample_size) {
 
 
 
-
-
 Generate my data now
 
 ```{r}
@@ -218,63 +217,92 @@ ggplot(missing_study) +
 ```
 
 
-STEP 0: Perform a logistic transform of the variable to impute.
-- Min = 0
-- Max = Ceiling of the 99th quantile value. I.e. max of C1 = 77, 99th quantile = 32.3. Max of log transform = 33?
+`STEP 1`: Perform a logistic transform on the Biomarker to impute.
 
 ```{r}
 min = 0
 max = ceiling(quantile(basis_study$confounder_1, prob = 0.99))
 
 #the transformation of confounder 1
+basis_study <- basis_study |>
+  mutate(confounder_1_transformed = sapply(confounder_1, log_quant_transform, min, max))
+
+#some NaN's are produced, but that is to be expected
 ```
 
-STEP 1: From basis study, generate quantiles based on variable relationships
+`STEP 2`: Perform Conditional Logistic Quantile Regression
+
+```{r}
+#test with 1st quartile, median, and 3rd quartile: need to transform them back
+
+#initiliaze empty data frame
+coefficient_data <- data.frame()
+
+for(i in seq(0.01:0.99, by=0.01)) {
+  reg_coeff <- rq(confounder_1_transformed ~ exposure + outcome, data = basis_study, tau=i)
+  
+  new_data <- data.frame(
+    b0 = reg_coeff$coefficients[1],
+    b1 = reg_coeff$coefficients[2],
+    b2 = reg_coeff$coefficients[3],
+    quant = i
+  )
+  
+  coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
+}
+```
 
 ```{r, eval=FALSE}
-#test with 1st quartile, median, and 3rd quartile: need to transform them back
-rq(confounder_1 ~ exposure + outcome, data = basis_study, tau=0.25)
-rq(confounder_1 ~ exposure + outcome, data = basis_study, tau=0.50)
-rq(confounder_1 ~ exposure + outcome, data = basis_study, tau=0.75)
+reg_test <- rq(confounder_1_transformed ~ exposure + outcome, data = basis_study, tau=0.44)
+summary(reg_test) #is there a way to extract variance here?
 ```
 
-
-
-
-
-
-Is this what I should expect?
+`STEP 2.5`: Store these results in a data frame
 
 ```{r}
-median <- rq(confounder_1 ~ exposure + outcome + confounder_2, data = basis_dataset, tau=0.50)
-median[1]
+#we already did this, so we're just going to clean up
+rm(new_data)
+rm(reg_coeff)
 
-third <- rq(confounder_1 ~ exposure + outcome + confounder_2, data = basis_dataset, tau=0.75)
-third[1]
+coefficient_data
 ```
 
-Logistic Transform needed
 
-Conditional (Logistic) Quantile Regression on the Basis Dataset
-+ Save the results to send to Study B
-
+`STEP 3`: Send these coefficients to an agreed-upon central study site.
+- Some extra steps here, but we are keeping it at |A| = 1 for now
+`STEP 4`: Send the list of regression coefficients to Missing-Data Datasets. 
+`STEP 4.5`: Each individual Missing-Data Study calculates FMj, and round this value to the nearest thousandths place. 
 
 ```{r}
-for(i in seq(0.01:0.99, by=0.01)) {
-  coefficients <- rq(confounder_1 ~ exposure + outcome + confounder_2, data = basis_dataset, tau=i)
-  i <- 0.01
-  
-  coefficients[1]
-}
-
-
-#then save these values
+#we had this code previously, but it's repeated here for clarification
+prop_missing = sum(is.na(missing_study$confounder_1_missing)) / nrow(missing_study)
+prop_missing
 ```
 
-For Study B: 10 Iterations of this result with each result being saved
-
-```{r}
-
-```
+`STEP 5`: Perform the Imputation Algorithm
 
 
+
+
+
+
+Random pick from u ~ U(0,1)
+Get the Floor and Modulus of u
+Some weighting thing with the quantile regression coefficients
+Step 6: Transform these LD variables back to regular variables 
+Min = 0 
+Max = ⌈QFMj(CB)⌉ of the missing-data study
+
+
+
+`STEP 7`: Perform logistic regression (or anything else you’re looking at) using this newly imputed variable and obtain the parameter of interest
+
+`STEP 8`: Repeat Steps 5-7 a total of 10 times (as per Multiple Imputation standards). Store the desired parameter and its variance-covariance matrix
+
+
+`STEP 9`: Aggregate with Rubin’s Rules
+
+
+***************************************************************************************************************
+
+Now we need to analyze the results, which will be another subsantive section in this document
