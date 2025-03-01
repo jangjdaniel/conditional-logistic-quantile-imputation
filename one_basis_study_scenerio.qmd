@@ -350,13 +350,12 @@ imputation_value_transformed <- ((1-modulus)*lower_quantile_value) + (modulus*up
 #lastly, we need to untransform this imputed value takes
 min_imp <- 0 #just our case... will test cases later
 
-find_prop_missing(missing_data_study = missing_study, LD = "confounder_1_missing")
-ecdf() 
+missing_data_proportion = find_prop_missing(missing_data_study = missing_study, LD = "confounder_1_missing") / 100
+LD_cutoff = as.numeric(quantile(missing_study$confounder_1, missing_data_proportion))
 #then normal distribution to add random error... AHHHHHHH
+max_imp <- LD_cutoff
 
-max_imp <- "placeholder"
-
-inv_log_quant_transform(value = imputation_value_transformed, min = min_imp, max = max_imp)
+imputed_value_regular <- inv_log_quant_transform(value = imputation_value_transformed, min = min_imp, max = max_imp)
 #then we assign the missing value here
 ```
 
