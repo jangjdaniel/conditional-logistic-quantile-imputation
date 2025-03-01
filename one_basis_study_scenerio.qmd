@@ -3,6 +3,7 @@
 library(tidyverse)
 library(quantreg)
 library(MASS)
+library(purrr)
 ```
 
 For simplicity, we are in the case where we don't need multiple datasets, just two
@@ -241,12 +242,13 @@ basis_study <- basis_study |>
 coefficient_data <- data.frame()
 
 for(i in seq(0.01:0.99, by=0.01)) {
-  reg_coeff <- rq(confounder_1_transformed ~ exposure + outcome, data = basis_study, tau=i)
+  reg_coeff <- rq(confounder_1_transformed ~ exposure + predictor + outcome, data = basis_study, tau=i)
   
   new_data <- data.frame(
     b0 = reg_coeff$coefficients[1],
-    b1 = reg_coeff$coefficients[2],
-    b2 = reg_coeff$coefficients[3],
+    b_exposure = reg_coeff$coefficients[2],
+    b_predictor = reg_coeff$coefficients[3],
+    b_outcome = reg_coeff$coefficients[4],
     quant = i
   )
   
@@ -255,7 +257,7 @@ for(i in seq(0.01:0.99, by=0.01)) {
 ```
 
 ```{r, eval=FALSE}
-reg_test <- rq(confounder_1_transformed ~ exposure + outcome, data = basis_study, tau=0.44)
+reg_test <- rq(confounder_1_transformed ~ predictor + exposure + outcome, data = basis_study, tau=0.44)
 summary(reg_test) #is there a way to extract variance here?
 ```
 
@@ -280,6 +282,18 @@ coefficient_data
 prop_missing = sum(is.na(missing_study$confounder_1_missing)) / nrow(missing_study)
 prop_missing = ceiling(prop_missing * 100)
 prop_missing
+
+#make this into a function for easy use?
+
+find_prop_missing <- function(missing_data_study, LD) {
+  prop_missing <- sum(is.na(missing_data_study[[LD]])) / nrow(missing_data_study)
+  prop_missing <- ceiling(prop_missing * 100)
+  
+  return(prop_missing)
+}
+
+#should spit out 21... works!
+find_prop_missing(missing_data_study = missing_study, LD = "confounder_1_missing")
 ```
 
 `STEP 5`: Perform the Imputation Algorithm
@@ -310,46 +324,61 @@ missing_study <- missing_study |>
 
 #more testings required
 u_vector <- uniform_values(prop_missing = prop_missing)
-lower_quantile <- coefficient_data[u_vector[2]*100, ] #floor
-upper_quantile <- coefficient_data[u_vector[4]*100, ] #ceiling
+floor_quantile <- coefficient_data[u_vector[2], ] #floor
+ceiling_quantile <- coefficient_data[u_vector[4], ] #ceiling
 
 #now take a value with confounder_1 missing, just a test case
-missing_study[16,]
+missing_study[16,]$predictor
+missing_study[16,]$exposure
+missing_study[16,]$outcome
 
-#quantile regression results (with the log transform)
+#quantile regression results (with the log transform)... messy formula, there should be a better way
+floor_quantile$b0
+floor_quantile$b_predictor
+floor_quantile$b_exposure
+floor_quantile$b_outcome
 
+#so this is terrible, but i don't know what else to do...
+lower_quantile_value <- floor_quantile$b0 + (floor_quantile$b_predictor * missing_study[16,]$predictor) + (floor_quantile$b_exposure * missing_study[16,]$exposure) + (floor_quantile$b_outcome * missing_study[16,]$outcome)
 
+upper_quantile_value <- ceiling_quantile$b0 + (ceiling_quantile$b_predictor * missing_study[16,]$predictor) + (ceiling_quantile$b_exposure * missing_study[16,]$exposure) + (ceiling_quantile$b_outcome * missing_study[16,]$outcome)
+
+#imputation value
+modulus <- u_vector[3]
+imputation_value_transformed <- ((1-modulus)*lower_quantile_value) + (modulus*upper_quantile_value)
+
+#lastly, we need to untransform this imputed value takes
+min_imp <- 0 #just our case... will test cases later
+
+find_prop_missing(missing_data_study = missing_study, LD = "confounder_1_missing")
+ecdf() 
+#then normal distribution to add random error... AHHHHHHH
+
+max_imp <- "placeholder"
+
+inv_log_quant_transform(value = imputation_value_transformed, min = min_imp, max = max_imp)
+#then we assign the missing value here
 ```
 
 The function!
 
 ```{r}
 #not entirely sure how i want to build this up
-conditional_logistic_quantile_imputation <- function(basis_coefficients, study_for_imputation, var_for_imputation) {
-  u_vector <- uniform_values() #random draw from a uniform dist
+conditional_logistic_quantile_imputation <- function(basis_coefficients, study_for_imputation, 
+                                                     var_for_imputation, prop_missing) {
+  #random draw from a uniform dist
+  u_vector <- uniform_values(prop_missing = prop_missing) 
   
   #choose the coefficients associated with the right tau value for quantile regression
-  
   u_vector[2] #floor
+  u_vector[3] #modulus
   u_vector[4] #ceiling
   
   
-  
-  
   #lastly, untransform this value using the right min and max... organization is a headache
+  #remember min is 0 and prop_missing gives us the right quantile for calculating max from study_for_imputation
 }
 
-
-#current idea for the function:
-#if the data point is missing:
-#get my uniform values
-#extract that uniform value row from basis_coefficients 
-#extract the appropriate covariates from study_for_imputation
-#do fitting
-#spit out the value
-#untransform the variable using min and max from study_for_imputation?
-
-#rinse and repeat
 ```
 
 `STEP 7`: Perform logistic regression (or anything else you’re looking at) using this newly imputed variable and obtain the parameter of interest
@@ -370,7 +399,7 @@ odds_b1 #NICE!!!!!!
 
 ```{r}
 CLQI_MI <- function(num_iterations = 10) {
-  #repeat this 10 times and save the desired parameters
+  #repeat this 10 times and save the desired parameters... use purrr?
   
 }
 
@@ -387,6 +416,24 @@ CLQI_MI <- function(num_iterations = 10) {
 
 ***************************************************************************************************************
 Make sure we implement the other imputation methods! (especially fixed imputation)
+
+Complete case: use `confounder_1_missing` and just ignore all NA values when doing regression
+
+```{r}
+
+```
+
+Constant Imputation:
+
+```{r}
+
+```
+
+Fixed Imputation:
+
+```{r}
+
+```
 
 
 ***************************************************************************************************************
