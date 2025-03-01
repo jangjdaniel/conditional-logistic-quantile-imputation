@@ -109,9 +109,11 @@ create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3, df_1, df_2) {
   
   #step 3: generating exposure variable based on confounders (probability)
   E <- expit(a_0 + a_1*C1)
+  E_bin <- rbinom(n, size = 1, prob = E)
   
   #step 4: generating outcome based on confounders, exposure, and base binary predictor
   O <- expit(b_0 + b_1*E + b_2*V + b_3*C1)
+  O_bin <- rbinom(n, size = 1, prob = O)
   
   #step 5: create dataset
   
@@ -119,8 +121,8 @@ create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3, df_1, df_2) {
     predictor = V,
     confounder_1 = C1,
     confounder_2 = C2,
-    exposure = E,
-    outcome = O
+    exposure = E_bin,
+    outcome = O_bin
   )
   
   return(my_data)
@@ -280,29 +282,108 @@ prop_missing
 ```
 
 `STEP 5`: Perform the Imputation Algorithm
+In the future, this will be the basis of the package, so we will need better methods
+Give a warning if prop_missing < 0.05, saying "MI is not recommended for less than 5% missing data"
+
+```{r}
+uniform_values <- function() {
+  u <- runif(1, min = 1, max = 99)
+  
+  #all the values we need from the uniform
+  floor_u <- floor(u) / 100
+  mod_u <- (u - floor(u)) / 100
+  next_u <- ceiling(u) / 100
+  
+  #now putting this into a vector
+  my_u <- c(u, floor_u, mod_u, next_u)
+  return(my_u)
+}
+```
+
+
+```{r}
+#non function version... there has to be a better way to do this, right???
+#constant imputation example... replace the sqrt(2) with a function that performs the algorithm!
+missing_study <- missing_study |>
+  mutate(confounder_1_imputed = ifelse(is.na(confounder_1_missing), sqrt(2), confounder_1_missing))
+
+
+#not entirely sure how i want to build this up
+conditional_logistic_quantile_imputation <- function(basis_coefficients, study_for_imputation, var_for_imputation) {
+  u_vector <- uniform_values() #random draw from a uniform dist
+  
+  #choose the coefficients associated with the right tau value for quantile regression
+  
+  
+  
+  
+  
+  #lastly, untransform this value using the right min and max... organization is a headache
+}
 
 
 
+#current idea for the function:
+#if the data point is missing:
+#get my uniform values
+#extract that uniform value row from basis_coefficients 
+#extract the appropriate covariates from study_for_imputation
+#do fitting
+#spit out the value
+#untransform the variable using min and max from study_for_imputation?
 
-
-
-Random pick from u ~ U(0,1)
-Get the Floor and Modulus of u
-Some weighting thing with the quantile regression coefficients
-Step 6: Transform these LD variables back to regular variables 
-Min = 0 
-Max = ⌈QFMj(CB)⌉ of the missing-data study
-
-
+#rinse and repeat
+```
 
 `STEP 7`: Perform logistic regression (or anything else you’re looking at) using this newly imputed variable and obtain the parameter of interest
 
-`STEP 8`: Repeat Steps 5-7 a total of 10 times (as per Multiple Imputation standards). Store the desired parameter and its variance-covariance matrix
+```{r, eval=FALSE}
+#"test case", non-function version
+log_reg_result <- glm(outcome ~ exposure + confounder_1 + confounder_2, 
+                      data = missing_study,
+                      family="binomial")
+
+log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
+odds_b1 <- exp(log_odds_b1)
+
+odds_b1 #NICE!!!!!!
+```
+
+`STEP 8`: Repeat Steps 5-7 a total of 10 times (as per Multiple Imputation standards). Store the desired parameter and its variance-covariance matrix?
+
+```{r}
+CLQI_MI <- function(num_iterations = 10) {
+  #repeat this 10 times and save the desired parameters
+  
+}
+
+#return a dataframe with all necessary information
+```
 
 
 `STEP 9`: Aggregate with Rubin’s Rules
 
+```{r}
+#need a refresher, but should be easy
+```
+
 
 ***************************************************************************************************************
 
-Now we need to analyze the results, which will be another subsantive section in this document
+Now we need to analyze the results, which will be another substantive section in this document
+Here are functions for some other imputation algorithms for comparison!
+
+```{r}
+#bias example
+```
+
+
+```{r}
+#MSE example
+```
+
+
+```{r}
+#coverage example
+```
+
