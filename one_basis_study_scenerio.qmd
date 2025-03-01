@@ -318,10 +318,6 @@ uniform_values <- function(prop_missing) {
 
 ```{r, eval=FALSE}
 #non function version... there has to be a better way to do this, right???
-#constant imputation example... replace the sqrt(2) with a function that performs the algorithm!
-missing_study <- missing_study |>
-  mutate(confounder_1_imputed = ifelse(is.na(confounder_1_missing), sqrt(2), confounder_1_missing))
-
 #more testings required
 u_vector <- uniform_values(prop_missing = prop_missing)
 floor_quantile <- coefficient_data[u_vector[2], ] #floor
@@ -359,26 +355,63 @@ imputed_value_regular <- inv_log_quant_transform(value = imputation_value_transf
 #then we assign the missing value here
 ```
 
-The function!
+The function to implement the case above... AHHHHHHHHHH
 
 ```{r}
 #not entirely sure how i want to build this up
-conditional_logistic_quantile_imputation <- function(basis_coefficients, study_for_imputation, 
-                                                     var_for_imputation, prop_missing) {
-  #random draw from a uniform dist
+CLQI <- function(basis_coefficients, study_for_imputation, 
+                 var_for_imputation, row_index) {
+  
+  #random draw from a uniform dist and extract important information
   u_vector <- uniform_values(prop_missing = prop_missing) 
+  floor_quantile <- coefficient_data[u_vector[2], ] #floor
+  ceiling_quantile <- coefficient_data[u_vector[4], ] #ceiling
   
-  #choose the coefficients associated with the right tau value for quantile regression
-  u_vector[2] #floor
-  u_vector[3] #modulus
-  u_vector[4] #ceiling
-  
+  #need to calculate regression values... really messy don't look at this
+  lower_quantile_value <- floor_quantile$b0 + (floor_quantile$b_predictor * missing_study[row_index,]$predictor) +
+    (floor_quantile$b_exposure * missing_study[row_index,]$exposure) + (floor_quantile$b_outcome * missing_study[row_index,]$outcome)
+
+  upper_quantile_value <- ceiling_quantile$b0 + (ceiling_quantile$b_predictor * missing_study[row_index,]$predictor) +
+    (ceiling_quantile$b_exposure * missing_study[row_index,]$exposure) + (ceiling_quantile$b_outcome * missing_study[row_index,]$outcome)
+
+  modulus <- u_vector[3]
+  imputation_value_transformed <- ((1-modulus)*lower_quantile_value) + (modulus*upper_quantile_value)
   
   #lastly, untransform this value using the right min and max... organization is a headache
+  min_imp <- 0
+  missing_data_proportion <- find_prop_missing(missing_data_study = study_for_imputation, 
+                                               LD = as.character(var_for_imputation)) / 100
+  
+  #THIS IS AN ISSUE CUS VARIABLE IS SPECIFIED HERE
+  max_imp <- as.numeric(quantile(missing_study$confounder_1, missing_data_proportion))
+  #then normal distribution to add random error... AHHHHHHH
+  
   #remember min is 0 and prop_missing gives us the right quantile for calculating max from study_for_imputation
+  imputed_value_regular <- inv_log_quant_transform(value = imputation_value_transformed, min = min_imp, max = max_imp)
+  
+  return(imputed_value_regular)
 }
-
 ```
+
+Simple tidyverse thing to perform this imputation, just once...
+
+```{r}
+missing_study <- missing_study |>
+  mutate(confounder_1_CLQI = ifelse(is.na(confounder_1_missing), 
+                                    CLQI(basis_coefficients = coefficient_data,
+                                         study_for_imputation = missing_study,
+                                         var_for_imputation = "confounder_1_missing",
+                                         row_index = seq_len(nrow(missing_study))), 
+                                    confounder_1_missing))
+```
+
+```{r}
+#checking stuff here
+ggplot(data=missing_study) +
+  geom_histogram(aes(x = confounder_1_CLQI, fill = "imputed"), alpha = 0.5) + 
+  geom_histogram(aes(x = confounder_1, fill = "original"), alpha = 0.5)
+```
+
 
 `STEP 7`: Perform logistic regression (or anything else you’re looking at) using this newly imputed variable and obtain the parameter of interest
 
@@ -425,7 +458,8 @@ Complete case: use `confounder_1_missing` and just ignore all NA values when doi
 Constant Imputation:
 
 ```{r}
-
+missing_study <- missing_study |>
+  mutate(confounder_1_constant_imputed = ifelse(is.na(confounder_1_missing), sqrt(2), confounder_1_missing))
 ```
 
 Fixed Imputation:
