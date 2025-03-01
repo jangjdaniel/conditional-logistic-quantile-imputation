@@ -301,7 +301,7 @@ In the future, this will be the basis of the package, so we will need better met
 Give a warning if prop_missing < 0.05, saying "MI is not recommended for less than 5% missing data"
 
 ```{r}
-uniform_values <- function(prop_missing) {
+uniform_values <- function(prop_missing = 99) {
   u <- runif(1, min = 1, max = prop_missing) #aka from 0.01 to 0.99
   
   #all the values we need from the uniform
@@ -358,6 +358,8 @@ imputed_value_regular <- inv_log_quant_transform(value = imputation_value_transf
 The function to implement the case above... AHHHHHHHHHH
 
 ```{r}
+max(missing_study$confounder_1)
+
 #not entirely sure how i want to build this up
 CLQI <- function(basis_coefficients, study_for_imputation, 
                  var_for_imputation, row_index) {
@@ -382,8 +384,9 @@ CLQI <- function(basis_coefficients, study_for_imputation,
   missing_data_proportion <- find_prop_missing(missing_data_study = study_for_imputation, 
                                                LD = as.character(var_for_imputation)) / 100
   
-  #THIS IS AN ISSUE CUS VARIABLE IS SPECIFIED HERE
-  max_imp <- as.numeric(quantile(missing_study$confounder_1, missing_data_proportion))
+  #THIS IS THE ISSUE...
+  max_imp <- 15
+  temp <- as.numeric(quantile(missing_study$confounder_1, missing_data_proportion))
   #then normal distribution to add random error... AHHHHHHH
   
   #remember min is 0 and prop_missing gives us the right quantile for calculating max from study_for_imputation
