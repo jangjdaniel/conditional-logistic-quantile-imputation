@@ -4,6 +4,7 @@ library(tidyverse)
 library(quantreg)
 library(MASS)
 library(purrr)
+library(tictoc)
 ```
 
 For simplicity, we are in the case where we don't need multiple datasets, just two
@@ -496,10 +497,49 @@ odds_b1
 `STEP 8`: Repeat Steps 5-7 a total of 10 times (as per Multiple Imputation standards). Store the desired parameter and its variance-covariance matrix?
 
 ```{r}
-CLQI_MI <- function(num_iterations = 10) {
+#this worked? probably not the best implementation but I can't complain right now
+CLQI_MI <- function(num_iterations = 10, missing_dataset, 
+                    basis_coefficients, var_for_imputation) {
   #repeat this 10 times and save the desired parameters... use purrr?
+  b1_imputations <- c()
+  
+  for(i in 1:num_iterations) {
+    
+    #perform CLQI on missing dataset
+    missing_dataset_temp <- missing_dataset |>
+      mutate(confounder_1_CLQI = ifelse(is.na(confounder_1_missing), 
+                                        mapply(function(row_index) {
+                                        fixed_MI(basis_coefficients = basis_coefficients,
+                                                 study_for_imputation = missing_dataset,
+                                                 var_for_imputation = var_for_imputation,
+                                                 row_index = row_index)
+                                      }, seq_len(nrow(missing_dataset))), 
+                                      confounder_1_missing))
+  
+    #then run logistic regression
+    log_reg_result <- glm(outcome ~ exposure + confounder_1_CLQI + confounder_2, 
+                          data = missing_dataset_temp,
+                          family="binomial")
+
+    log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
+    odds_b1 <- exp(log_odds_b1)
+  
+    #then store this value in b1_imputations
+    b1_imputations[i] <- odds_b1
+  }
+
+  return(b1_imputations)
+  #now we spit out a dataframe with the iterated b1 coefficients
   
 }
+
+tictoc::tic()
+CLQI_MI_results <- CLQI_MI(missing_dataset = missing_study, 
+                           basis_coefficients = coefficient_data,
+                           var_for_imputation = "confounder_1_missing")
+tictoc::toc()
+
+mean(CLQI_MI_results) - 1.1 #bias... super low
 
 #return a dataframe with all necessary information
 ```
