@@ -256,6 +256,10 @@ for(i in seq(0.01:0.99, by=0.01)) {
 }
 ```
 
+```{r, eval=FALSE}
+reg_test <- rq(confounder_1_transformed ~ predictor + exposure + outcome, data = basis_study, tau=0.44)
+summary(reg_test) #is there a way to extract variance here?
+```
 
 `STEP 2.5`: Store these results in a data frame
 
@@ -297,8 +301,8 @@ In the future, this will be the basis of the package, so we will need better met
 Give a warning if prop_missing < 0.05, saying "MI is not recommended for less than 5% missing data"
 
 ```{r}
-uniform_values <- function(prop_missing) {
-  u <- runif(1, min = 1, max = prop_missing)
+uniform_values <- function() {
+  u <- runif(1, min = 1, max = 99) #aka from 0.01 to 0.99
   
   #all the values we need from the uniform
   floor_u <- floor(u)
@@ -311,13 +315,11 @@ uniform_values <- function(prop_missing) {
 }
 ```
 
+The function that is implementing CLQI
 
 ```{r}
-CLQI <- function(basis_coefficients, study_for_imputation, 
-                 var_for_imputation, row_index) {
-  
-  #what is the LD quantile?
-  LD_quantile <- find_prop_missing(missing_data_study = study_for_imputation, LD = var_for_imputation)
+fixed_MI <- function(basis_coefficients, study_for_imputation, 
+                     var_for_imputation, row_index) {
   
   #random draw from a uniform dist and extract important information
   u_vector <- uniform_values() 
@@ -348,9 +350,9 @@ CLQI <- function(basis_coefficients, study_for_imputation,
                                                    min = min_imp, 
                                                    max = max_imp)
   
-  unif_value <- u_vector[1]
+  unif_val <- u_vector[1]
   
-  return(unif_value)
+  return(unif_val)
 }
 ```
 
@@ -371,10 +373,11 @@ missing_study <- missing_study |>
 ggplot(data=missing_study) +
   geom_histogram(aes(x = confounder_1_CLQI, fill = "imputed"), alpha = 0.5) + 
   geom_histogram(aes(x = confounder_1, fill = "original"), alpha = 0.5) + 
-  xlim(-1,1)
+  xlim(-1,3)
 ```
 
 ```{r}
+#another diagnostic
 missing_study <- missing_study |>
   mutate(only_imputed = ifelse(is.na(confounder_1_missing), confounder_1_CLQI, NA))
 
@@ -383,62 +386,8 @@ ggplot(missing_study) +
 ```
 
 ```{r}
-#"test case", non-function version
-log_reg_result <- glm(outcome ~ exposure + confounder_1_CLQI + confounder_2, 
-                      data = missing_study,
-                      family="binomial")
-
-log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
-odds_b1 <- exp(log_odds_b1)
-
-odds_b1 #NICE!!!!!!
+summary(missing_study$only_imputed)
 ```
-
-```{r}
-#"test case", non-function version
-log_reg_result <- glm(outcome ~ exposure + confounder_1 + confounder_2, 
-                      data = missing_study,
-                      family="binomial")
-
-log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
-odds_b1 <- exp(log_odds_b1)
-
-odds_b1 #NICE!!!!!!
-```
-
-
-```{r}
-missing_study <- missing_study |>
-  mutate(confounder_1_constant_imputed = ifelse(is.na(confounder_1_missing), sqrt(2), confounder_1_missing))
-
-#"test case", non-function version
-log_reg_result <- glm(outcome ~ exposure + confounder_1_constant_imputed + confounder_2, 
-                      data = missing_study,
-                      family="binomial")
-
-log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
-odds_b1 <- exp(log_odds_b1)
-
-odds_b1 #should be biased... (moreso than our algorithm)
-```
-
-```{r}
-#complete case analysis cus why not
-missing_study_complete_case <- missing_study |>
-  filter(!is.na(confounder_1_missing))
-
-#"test case", non-function version
-log_reg_result <- glm(outcome ~ exposure + confounder_1 + confounder_2, 
-                      data = missing_study_complete_case,
-                      family="binomial")
-
-log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
-odds_b1 <- exp(log_odds_b1)
-
-odds_b1 #should be biased...
-```
-
-
 
 `STEP 7`: Perform logistic regression (or anything else you’re looking at) using this newly imputed variable and obtain the parameter of interest
 
@@ -452,6 +401,66 @@ log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable 
 odds_b1 <- exp(log_odds_b1)
 
 odds_b1 #NICE!!!!!!
+```
+
+Comparison with the imputed values
+
+```{r, eval=FALSE}
+#"test case", non-function version
+log_reg_result <- glm(outcome ~ exposure + confounder_1_CLQI + confounder_2, 
+                      data = missing_study,
+                      family="binomial")
+
+log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
+odds_b1 <- exp(log_odds_b1)
+
+odds_b1
+```
+
+Constant Imputation with sqrt(2)
+
+```{r, eval=FALSE}
+#"test case", non-function version
+
+log_reg_result <- glm(outcome ~ exposure + confounder_1_constant_imputed + confounder_2, 
+                      data = missing_study,
+                      family="binomial")
+
+log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
+odds_b1 <- exp(log_odds_b1)
+
+odds_b1
+```
+
+Now a complete case version
+
+```{r, eval=FALSE}
+#"test case", non-function version
+missing_study_complete_case <- missing_study |>
+  filter(!is.na(confounder_1_missing))
+
+log_reg_result <- glm(outcome ~ exposure + confounder_1 + confounder_2, 
+                      data = missing_study_complete_case,
+                      family="binomial")
+
+log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
+odds_b1 <- exp(log_odds_b1)
+
+odds_b1
+```
+
+More generally, don't use confounder 1: super terrible, even worse than complete case
+
+```{r, eval=FALSE}
+#"test case", non-function version
+log_reg_result <- glm(outcome ~ exposure + confounder_2, 
+                      data = missing_study_complete_case,
+                      family="binomial")
+
+log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
+odds_b1 <- exp(log_odds_b1)
+
+odds_b1
 ```
 
 `STEP 8`: Repeat Steps 5-7 a total of 10 times (as per Multiple Imputation standards). Store the desired parameter and its variance-covariance matrix?

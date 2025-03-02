@@ -315,16 +315,13 @@ uniform_values <- function() {
 }
 ```
 
-The function that is implementing CLQI
+The function that is implementing fixed MI
 
 ```{r}
-CLQI <- function(basis_coefficients, study_for_imputation, 
+fixed_MI <- function(basis_coefficients, study_for_imputation, 
                  var_for_imputation, row_index) {
   
-  #what is the LD quantile?
-  LD_quantile <- find_prop_missing(missing_data_study = study_for_imputation, LD = var_for_imputation)
-  
-  #random draw from a uniform dist and extract important information
+  #random draw from a uniform dist and extract important information: only once!
   u_vector <- uniform_values() 
   floor_quantile <- coefficient_data[u_vector[2], ] #floor
   ceiling_quantile <- coefficient_data[u_vector[4], ] #ceiling
@@ -353,21 +350,41 @@ CLQI <- function(basis_coefficients, study_for_imputation,
                                                    min = min_imp, 
                                                    max = max_imp)
   
+  #unif_val <- u_vector[1]
+  #return(unif_val)
+    
   return(imputed_value_regular)
 }
 ```
 
-Simple tidyverse thing to perform this imputation, just once...
+Simple tidyverse thing to perform this imputation, just once as a test case
+
+```{r}
+missing_study <- missing_study |>
+  mutate(confounder_1_fixed_MI = ifelse(is.na(confounder_1_missing), 
+                                        fixed_MI(basis_coefficients = coefficient_data,
+                                                 study_for_imputation = missing_study,
+                                                 var_for_imputation = "confounder_1_missing",
+                                                 row_index = seq_len(nrow(missing_study))), 
+                                        confounder_1_missing))
+```
+
+*WARNING* The `fixed_MI` function calls the uniform dist only once, causing issues
+This tidyverse thing fixes that (thanks ChatGPT), but for future implementations, maybe write a new function
+Preferably without for loops
 
 ```{r}
 missing_study <- missing_study |>
   mutate(confounder_1_CLQI = ifelse(is.na(confounder_1_missing), 
-                                    CLQI(basis_coefficients = coefficient_data,
-                                         study_for_imputation = missing_study,
-                                         var_for_imputation = "confounder_1_missing",
-                                         row_index = seq_len(nrow(missing_study))), 
+                                    mapply(function(row_index) {
+                                      fixed_MI(basis_coefficients = coefficient_data,
+                                               study_for_imputation = missing_study,
+                                               var_for_imputation = "confounder_1_missing",
+                                               row_index = row_index)
+                                    }, seq_len(nrow(missing_study))), 
                                     confounder_1_missing))
 ```
+
 
 ```{r}
 #checking stuff here
@@ -409,6 +426,18 @@ Comparison with the imputed values
 ```{r, eval=FALSE}
 #"test case", non-function version
 log_reg_result <- glm(outcome ~ exposure + confounder_1_CLQI + confounder_2, 
+                      data = missing_study,
+                      family="binomial")
+
+log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
+odds_b1 <- exp(log_odds_b1)
+
+odds_b1
+```
+
+```{r, eval=FALSE}
+#"test case", non-function version
+log_reg_result <- glm(outcome ~ exposure + confounder_1_fixed_MI + confounder_2, 
                       data = missing_study,
                       family="binomial")
 
