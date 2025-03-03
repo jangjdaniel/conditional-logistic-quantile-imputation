@@ -375,6 +375,8 @@ This tidyverse thing fixes that (thanks ChatGPT), but for future implementations
 Preferably without for loops
 
 ```{r}
+#we will put this into a function later for multiple iterations of CLQI
+
 missing_study <- missing_study |>
   mutate(confounder_1_CLQI = ifelse(is.na(confounder_1_missing), 
                                     mapply(function(row_index) {
@@ -410,6 +412,8 @@ summary(missing_study$only_imputed)
 
 `STEP 7`: Perform logistic regression (or anything else you’re looking at) using this newly imputed variable and obtain the parameter of interest
 
+*True regression*
+
 ```{r, eval=FALSE}
 #"test case", non-function version
 log_reg_result <- glm(outcome ~ exposure + confounder_1 + confounder_2, 
@@ -422,7 +426,7 @@ odds_b1 <- exp(log_odds_b1)
 odds_b1 #NICE!!!!!!
 ```
 
-Comparison with the imputed values
+*CLQI*
 
 ```{r, eval=FALSE}
 #"test case", non-function version
@@ -436,6 +440,8 @@ odds_b1 <- exp(log_odds_b1)
 odds_b1
 ```
 
+*fixed MI*
+
 ```{r, eval=FALSE}
 #"test case", non-function version
 log_reg_result <- glm(outcome ~ exposure + confounder_1_fixed_MI + confounder_2, 
@@ -448,7 +454,7 @@ odds_b1 <- exp(log_odds_b1)
 odds_b1
 ```
 
-Constant Imputation with sqrt(2)
+*Constant Imputation with sqrt(2)*
 
 ```{r, eval=FALSE}
 #"test case", non-function version
@@ -463,7 +469,7 @@ odds_b1 <- exp(log_odds_b1)
 odds_b1
 ```
 
-Now a complete case version
+*Complete case version*
 
 ```{r, eval=FALSE}
 #"test case", non-function version
@@ -480,7 +486,7 @@ odds_b1 <- exp(log_odds_b1)
 odds_b1
 ```
 
-More generally, don't use confounder 1: super terrible, even worse than complete case
+More generally, *don't use confounder 1*: super terrible, even worse than complete case
 
 ```{r, eval=FALSE}
 #"test case", non-function version
@@ -496,64 +502,100 @@ odds_b1
 
 `STEP 8`: Repeat Steps 5-7 a total of 10 times (as per Multiple Imputation standards). Store the desired parameter and its variance-covariance matrix?
 
+
 ```{r}
-#this worked? probably not the best implementation but I can't complain right now
 CLQI_MI <- function(num_iterations = 10, missing_dataset, 
                     basis_coefficients, var_for_imputation) {
-  #repeat this 10 times and save the desired parameters... use purrr?
-  b1_imputations <- c()
   
-  for(i in 1:num_iterations) {
-    
-    #perform CLQI on missing dataset
-    missing_dataset_temp <- missing_dataset |>
-      mutate(confounder_1_CLQI = ifelse(is.na(confounder_1_missing), 
+  #initializing vector of b1 coefficients
+  b1_imputations <- numeric(num_iterations)
+  
+  #purrr instead of a for loop
+  imputations <- purrr::map_dbl(seq_len(num_iterations), ~ {
+  
+    #apply the CLQI algorithm to implement
+    missing_dataset_temp <- missing_dataset |> 
+      mutate(confounder_1_CLQI = ifelse(is.na(!!sym(var_for_imputation)), 
                                         mapply(function(row_index) {
-                                        fixed_MI(basis_coefficients = basis_coefficients,
-                                                 study_for_imputation = missing_dataset,
-                                                 var_for_imputation = var_for_imputation,
-                                                 row_index = row_index)
-                                      }, seq_len(nrow(missing_dataset))), 
-                                      confounder_1_missing))
+                                          fixed_MI(basis_coefficients = basis_coefficients,
+                                                   study_for_imputation = missing_dataset,
+                                                   var_for_imputation = var_for_imputation,
+                                                   row_index = row_index)
+                                        }, seq_len(nrow(missing_dataset))), 
+                                        !!sym(var_for_imputation)))
+    
+    #run logistic regression
+    log_reg_result <- glm(outcome ~ exposure + predictor + confounder_1_CLQI, 
+                          data = missing_dataset_temp, family = "binomial")
+    
+    #extract exposure coefficients (b1)
+    odds_b1 <- exp(log_reg_result$coefficients[2])
+    return(odds_b1)
+  })
   
-    #then run logistic regression
-    log_reg_result <- glm(outcome ~ exposure + confounder_1_CLQI + confounder_2, 
-                          data = missing_dataset_temp,
-                          family="binomial")
-
-    log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
-    odds_b1 <- exp(log_odds_b1)
-  
-    #then store this value in b1_imputations
-    b1_imputations[i] <- odds_b1
-  }
-
-  return(b1_imputations)
-  #now we spit out a dataframe with the iterated b1 coefficients
-  
+  #we repeated this 10 times, now we just return the b1 coefficients as a vector
+  return(imputations)
 }
 
+```
+
+```{r}
+#check the runtime here
 tictoc::tic()
 CLQI_MI_results <- CLQI_MI(missing_dataset = missing_study, 
                            basis_coefficients = coefficient_data,
                            var_for_imputation = "confounder_1_missing")
 tictoc::toc()
-
-mean(CLQI_MI_results) - 1.1 #bias... super low
-
-#return a dataframe with all necessary information
 ```
 
-
-`STEP 9`: Aggregate with Rubin’s Rules
+`STEP 9`: Aggregate with Rubin’s Rules and calculate necessary values
 
 ```{r}
-#need a refresher, but should be easy
+#recall that the true value of the coefficient is exp(a_1)
+a_1_true <- exp(log(1.1))
+
+mean(CLQI_MI_results) - a_1_true #bias... super low
 ```
 
+***************************************************************************************************************
+
+Now we are going to do some simulations to get a distribution for bias. Note the runtime
+
+```{r}
+sim_size <- 20
+bias_results <- numeric(sim_size)
+MSE_results <- numeric(sim_size)
+
+a_1_true <- exp(log(1.1))
+
+tictoc::tic()
+
+# Use purrr to iterate over simulations
+sim_results <- purrr::map_dfr(1:sim_size, ~ {
+  
+  CLQI_MI_results <- CLQI_MI(missing_dataset = missing_study, 
+                             basis_coefficients = coefficient_data,
+                             var_for_imputation = "confounder_1_missing")
+  
+  # Calculate bias and MSE for each iteration
+  bias_val <- mean(CLQI_MI_results) - a_1_true
+  MSE_val <- bias_val^2 + var(CLQI_MI_results)
+  
+  # Return values as a data frame for easy handling
+  data.frame(bias = bias_val, MSE = MSE_val)
+  }
+)
+
+# Extract results into vectors
+bias_results <- sim_results$bias
+MSE_results <- sim_results$MSE
+
+tictoc::toc()
+```
 
 ***************************************************************************************************************
-Make sure we implement the other imputation methods! (especially fixed imputation)
+
+Make sure we implement the other imputation methods under the same setting! (especially fixed imputation)
 
 Complete case: use `confounder_1_missing` and just ignore all NA values when doing regression
 
@@ -574,23 +616,13 @@ Fixed Imputation:
 
 ```
 
-
 ***************************************************************************************************************
 
-Now we need to analyze the results, which will be another substantive section in this document
-Here are functions for some other imputation algorithms for comparison!
+Save all this information to show later!
 
 ```{r}
-#bias example: take the aggregated b1 estimate, then subtract by the population b1 estimate to get bias value for one iteration
+
 ```
 
-
-```{r}
-#MSE example: need the variance of the b1 estimate... figure this one out!
-```
-
-
-```{r}
-#coverage example: i have no clue !!!!!
-```
-
+*Use a new qmd document to do the other scenerios and clean everything up*
+*Some of the code here really was for demonstration purposes*
