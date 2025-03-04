@@ -107,7 +107,7 @@ create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3, df_1, df_2) {
   
   #step 2: cnfounder with a skewed distribution... Biomarker missing
   C1 <- rchisq(n, df = df_1) 
-  C2 <- rnorm(n, mean = 75, sd = 7) #another confounder with a normal distribution. not used right now
+  #C2 <- rnorm(n, mean = 75, sd = 7) #another confounder with a normal distribution. not used right now
   
   #step 3: generating exposure variable based on confounders (probability)
   E <- expit(a_0 + a_1*C1)
@@ -122,7 +122,6 @@ create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3, df_1, df_2) {
   my_data <- data.frame(
     predictor = V,
     confounder_1 = C1,
-    confounder_2 = C2,
     exposure = E_bin,
     outcome = O_bin
   )
@@ -416,7 +415,7 @@ summary(missing_study$only_imputed)
 
 ```{r, eval=FALSE}
 #"test case", non-function version
-log_reg_result <- glm(outcome ~ exposure + confounder_1 + confounder_2, 
+log_reg_result <- glm(outcome ~ exposure + confounder_1 + predictor, 
                       data = missing_study,
                       family="binomial")
 
@@ -430,7 +429,7 @@ odds_b1 #NICE!!!!!!
 
 ```{r, eval=FALSE}
 #"test case", non-function version
-log_reg_result <- glm(outcome ~ exposure + confounder_1_CLQI + confounder_2, 
+log_reg_result <- glm(outcome ~ exposure + confounder_1_CLQI + predictor, 
                       data = missing_study,
                       family="binomial")
 
@@ -444,7 +443,7 @@ odds_b1
 
 ```{r, eval=FALSE}
 #"test case", non-function version
-log_reg_result <- glm(outcome ~ exposure + confounder_1_fixed_MI + confounder_2, 
+log_reg_result <- glm(outcome ~ exposure + confounder_1_fixed_MI + predictor, 
                       data = missing_study,
                       family="binomial")
 
@@ -455,11 +454,34 @@ odds_b1
 ```
 
 *Constant Imputation with sqrt(2)*
+*Recall with set seed, 0.912 is our true LD*
+*This is not the best coding practice, but this is just a trial run to see if everything works*
 
 ```{r, eval=FALSE}
 #"test case", non-function version
 
-log_reg_result <- glm(outcome ~ exposure + confounder_1_constant_imputed + confounder_2, 
+missing_study <- missing_study |>
+  mutate(confounder_1_constant_imputed = ifelse(is.na(confounder_1_missing), 0.912/sqrt(2), confounder_1_missing))
+
+log_reg_result <- glm(outcome ~ exposure + confounder_1_constant_imputed + predictor, 
+                      data = missing_study,
+                      family="binomial")
+
+log_odds_b1 <- log_reg_result$coefficients[2] #extracting the exposure variable coefficient
+odds_b1 <- exp(log_odds_b1)
+
+odds_b1
+```
+
+Now with 2
+
+```{r, eval=FALSE}
+#"test case", non-function version
+
+missing_study <- missing_study |>
+  mutate(confounder_1_constant_imputed_2 = ifelse(is.na(confounder_1_missing), 0.912/2, confounder_1_missing))
+
+log_reg_result <- glm(outcome ~ exposure + confounder_1_constant_imputed_2 + predictor, 
                       data = missing_study,
                       family="binomial")
 
@@ -476,7 +498,7 @@ odds_b1
 missing_study_complete_case <- missing_study |>
   filter(!is.na(confounder_1_missing))
 
-log_reg_result <- glm(outcome ~ exposure + confounder_1 + confounder_2, 
+log_reg_result <- glm(outcome ~ exposure + confounder_1 + predictor, 
                       data = missing_study_complete_case,
                       family="binomial")
 
@@ -490,7 +512,7 @@ More generally, *don't use confounder 1*: super terrible, even worse than comple
 
 ```{r, eval=FALSE}
 #"test case", non-function version
-log_reg_result <- glm(outcome ~ exposure + confounder_2, 
+log_reg_result <- glm(outcome ~ exposure + predictor, 
                       data = missing_study_complete_case,
                       family="binomial")
 
@@ -603,7 +625,7 @@ Complete case: use `confounder_1_missing` and just ignore all NA values when doi
 
 ```
 
-Constant Imputation:
+Constant Imputation: 
 
 ```{r}
 missing_study <- missing_study |>
