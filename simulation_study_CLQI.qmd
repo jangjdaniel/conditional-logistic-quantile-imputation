@@ -1,3 +1,12 @@
+
+This qmd is a modified version of `one_basis_study_scenerio.qmd` that cleaned up everything so we can get results for the simulation study. We will be testing 8 scenerios, all with one missing study and one basis study
+
+- Two sample sizes (n=500, n=1500)
+- Two LD ranges (~30%, ~60%)
+- Two levels of heterogeneity (Small: 0.01, Large: 0.1)
+
+My hope is that this qmd is easily readable. If not, please contact me: djang26@amherst.edu
+
 ```{r}
 #necessary libraries
 library(tidyverse)
@@ -7,8 +16,7 @@ library(purrr)
 library(tictoc)
 ```
 
-For simplicity, we are in the case where we don't need multiple datasets, just two
-*these functions are from data_generating_mechanism.qmd*
+These are necessary transformation functions that we will be using throughout this study
 
 ```{r}
 #logit and expit functions for myself
@@ -26,7 +34,7 @@ expit <- function(prob) {
 log_quant_transform <- function(value, min, max) {
   new_value <- log((value - min) / (max - value))
   
-  if (is.nan(new_value)) {return(NA)} 
+  if (is.nan(new_value)) {return(NA)} #negative log values return an NA. Will be important to address
   else {return(new_value)}
 }
 
@@ -35,6 +43,12 @@ inv_log_quant_transform <- function(value, min, max) {
   return(new_value)
 }
 ```
+
+`coefficient_generator` generates coefficients for our two studies to be generated out of
+Tau represents our heterogenity among studies. The higher the value, the more variable the coefficients are between each iteration
+We chose the point values for the coefficients based off of the previous paper introducing CQI for consistency
+
+This function outputs a dataset including all the necessary information from which the distributions that the data are generated from are
 
 ```{r}
 coefficient_generator <- function(tau, num_studies, 
@@ -90,9 +104,9 @@ coefficient_generator <- function(tau, num_studies,
   
   return(coefficients)
 }
-
-#coefficient_generator(tau = 0.01, num_studies = 30)
 ```
+
+`create_data` creates a single dataset based on a given sample size and specified coefficients
 
 ```{r}
 #this will be nested to make the list function cleaner to read
@@ -128,6 +142,8 @@ create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3, df_1, df_2) {
   return(my_data)
 } 
 ```
+
+`create_multiple_datasets` uses `create_data` to, well you guessed it, create multiple datasets. The distributions from which the data are generated for each dataset comes from information we get from `coefficient_generator`
 
 ```{r}
 #recall all coefficients are stored in coefficient_generator funct
@@ -176,135 +192,95 @@ create_multiple_datasets <- function(study_coefficient_dataset, sample_size) {
 }
 ```
 
-Generate my data now
+Last but not least, `data_generating_mechanism` creates our datasets with the LD missingness added. We cannot extract the true coefficients from this function (to keep things simple), but with some modification, you can do that. 
+
+*Warning: The LD should be chosen from this, which means I have to edit my functions later*
 
 ```{r}
-set.seed(605)
-
-#don't forget to load the three functions necessary to make this work
-my_coefficients_basic <- coefficient_generator(tau = 0.1, num_studies = 2)
-my_studies_basic <- create_multiple_datasets(my_coefficients_basic, sample_size = 500)
-```
-
-```{r}
-#doesn't matter which study is the basis study
-basis_study <- as.data.frame(my_studies_basic[1])
-missing_study <- as.data.frame(my_studies_basic[2])
-
-LoD <- my_coefficients_basic[2,]$LoD
-```
-
-Now simple mechanism to make LoD data for the missing study. Also count the prop of missing data
-
-```{r}
-#look at my_coefficients and see that randomly selected LoD is 0.912
-missing_study <- missing_study |>
-  mutate(confounder_1_missing = ifelse(confounder_1 >= LoD, confounder_1, NA))
-
-#count proportion of missingness here: 17.6%
-prop_missing = sum(is.na(missing_study$confounder_1_missing)) / nrow(missing_study)
-prop_missing
-
-#get rid of the mess
-rm(my_studies_basic)
-```
-
-View what the confounder 1 looks like
-
-```{r}
-ggplot(missing_study) +
-  geom_histogram(aes(x = confounder_1, fill = "original"), alpha = 0.5) +
-  geom_histogram(aes(x = confounder_1_missing, fill = "imputed"), alpha = 0.5) + 
-  xlim(0,10)
-```
-
-Looking at the true distributions: we can see a big influence on how the CLQI algorithm imputes
-
-```{r}
-temp1 <- basis_study |> dplyr::select(confounder_1) |> rename(confounder_1_basis = confounder_1)
-temp2 <- missing_study |> dplyr::select(confounder_1) |>  rename(confounder_1_missing = confounder_1)
-
-temp <- cbind(temp1, temp2)
-rm(temp1) 
-rm(temp2)
-
-#what the distributions look like
-ggplot(data = temp) +
-  geom_histogram(aes(x = confounder_1_basis, fill = "basis"), alpha = 0.5) +
-  geom_histogram(aes(x = confounder_1_missing, fill = "missing"), alpha = 0.5) + 
-  xlim(0,10)
-
-rm(temp)
-```
-
-
-
-
-`STEP 1`: Perform a logistic transform on the Biomarker to impute.
-
-```{r}
-min = 0
-max = ceiling(quantile(basis_study$confounder_1, prob = 0.99))
-
-#the transformation of confounder 1
-basis_study <- basis_study |>
-  mutate(confounder_1_transformed = sapply(confounder_1, log_quant_transform, min, max))
-
-#some NaN's are produced, but that is to be expected
-```
-
-`STEP 2`: Perform Conditional Logistic Quantile Regression
-
-```{r}
-#test with 1st quartile, median, and 3rd quartile: need to transform them back
-
-#initiliaze empty data frame
-coefficient_data <- data.frame()
-
-for(i in seq(0.01:0.99, by=0.01)) {
-  reg_coeff <- rq(confounder_1_transformed ~ exposure + predictor + outcome, data = basis_study, tau=i)
+data_generating_mechanism <- function(sample_size, LD, tau) {
   
-  new_data <- data.frame(
-    b0 = reg_coeff$coefficients[1],
-    b_exposure = reg_coeff$coefficients[2],
-    b_predictor = reg_coeff$coefficients[3],
-    b_outcome = reg_coeff$coefficients[4],
-    quant = i
-  )
+  #first, create my studies based on coefficients
+  my_coefficients <- coefficient_generator(tau = tau, num_studies = 2) #2 is consistent here
+  my_studies <- create_multiple_datasets(my_coefficients, sample_size = sample_size)
   
-  coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
+  #log transform our data
+  min = 0
+  max = ceiling(quantile(my_studies[[1]]$confounder_1, prob = 0.99))
+  
+  my_studies[[1]] <- my_studies[[1]] |>
+    mutate(confounder_1_transformed = sapply(confounder_1, log_quant_transform, min, max))
+  
+  #define the LD and make data missing based on that
+  LoD <- my_coefficients_basic[2,]$LoD
+  
+  #now we made the data missing based on our given LD, and also transform this value
+  my_studies[[2]] <- my_studies[[2]] |>
+    mutate(confounder_1_missing = ifelse(confounder_1 >= LoD, confounder_1, NA))
+  
+  return(my_studies) #return list of studies with missingness added
 }
 ```
 
-```{r, eval=FALSE}
-reg_test <- rq(confounder_1_transformed ~ predictor + exposure + outcome, data = basis_study, tau=0.44)
-summary(reg_test) #is there a way to extract variance here?
-```
+**************************************************************************************
 
-`STEP 2.5`: Store these results in a data frame
-
-```{r}
-#we already did this, so we're just going to clean up
-rm(new_data)
-rm(reg_coeff)
-
-coefficient_data
-```
-
-
-`STEP 3`: Send these coefficients to an agreed-upon central study site.
-- Some extra steps here, but we are keeping it at |A| = 1 for now
-`STEP 4`: Send the list of regression coefficients to Missing-Data Datasets. 
-`STEP 4.5`: Each individual Missing-Data Study calculates FMj, and round this value to the nearest thousandths place. 
+We will now perform Setting 1 of the simulation study. This will serve as a closer step-by-step guide on how the study is performed
+- n = 500
+- LD ~ 30%
+- Small Heterogeneity (tau = 0.01)
 
 ```{r}
-#we had this code previously, but it's repeated here for clarification
-prop_missing = sum(is.na(missing_study$confounder_1_missing)) / nrow(missing_study)
-prop_missing = ceiling(prop_missing * 100)
-prop_missing
+set.seed(605) #set seed for reproducibility
 
+my_sample_size = 500
+my_tau = 0.01
+```
+
+Recall that we need to run the data generating mechanism for each simulation iteration, as well as proceed with the CLQI algorithm, Fixed MI, constant imputation, and complete case (CC) analysis. 
+
+The workflow will look as follows *for each iteration*:
+- Generate data with new set of coefficients each time
+>> Remember to extract the list with basis_study and missing_study so code works later on...
+
+- Run the conditional logistic quantile regressions to extract regression coefficients to "send over" to missing study
+- Missing Study performs CLQI, as well as the other imputation methods (fixed MI, constant)
+- Do logistic regression to get b1 coefficient for each method. Don't forget Complete Case (CC)
+>> Don't forget to do the MI thing for CLQI, repeating the algorithm 10 times so that we can get an aggregate result
+>> This also applies to fixed MI. We must do it 10 times
+
+- Store all necessary information for bias, MSE, coverage, etc into a new dataset
+- Rinse and repeat 1000 times for the simulation setting
+
+We will be defining some more functions before running Simulation 1
+
+**************************************************************************************
+
+`logistic_quantile_regression_coefficients` creates our set of regression coefficients from our *basis study* to send to the *missing study*. It outputs a dataset of the coefficients, ready for quantile regression
+
+```{r}
+logistic_quantile_regression_coefficients <- function(basis_study) {
+ 
+  coefficient_data <- data.frame() #initiliaze empty data frame
+  
+  for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
+    reg_coeff <- rq(confounder_1_transformed ~ exposure + predictor + outcome, data = basis_study, tau=i)
+    
+    new_data <- data.frame(
+      b0 = reg_coeff$coefficients[1],
+      b_exposure = reg_coeff$coefficients[2],
+      b_predictor = reg_coeff$coefficients[3],
+      b_outcome = reg_coeff$coefficients[4],
+      quant = i)
+    
+    coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
+  }
+  return(coefficient_data)
+}
+```
+
+`find_prop_missing` finds the proportion of LD data for the missing study. This will end up being useful
+
+```{r}
 #make this into a function for easy use?
-
 find_prop_missing <- function(missing_data_study, LD) {
   prop_missing <- sum(is.na(missing_data_study[[LD]])) / nrow(missing_data_study)
   prop_missing <- ceiling(prop_missing * 100)
@@ -312,13 +288,10 @@ find_prop_missing <- function(missing_data_study, LD) {
   return(prop_missing)
 }
 
-#should spit out 21... works!
 find_prop_missing(missing_data_study = missing_study, LD = "confounder_1_missing")
 ```
 
-`STEP 5`: Perform the Imputation Algorithm
-In the future, this will be the basis of the package, so we will need better methods
-Give a warning if prop_missing < 0.05, saying "MI is not recommended for less than 5% missing data"
+`uniform_values` generates a random value from a unif(1,99) distribution, then extracts the floor, ceiling, and modulus for the CLQI algorithm
 
 ```{r}
 uniform_values <- function() {
@@ -407,28 +380,11 @@ missing_study <- missing_study |>
                                     confounder_1_missing))
 ```
 
-```{r}
-#checking stuff here
-ggplot(data=missing_study) +
-  geom_histogram(aes(x = confounder_1_CLQI, fill = "imputed"), alpha = 0.5) + 
-  geom_histogram(aes(x = confounder_1, fill = "original"), alpha = 0.5) + 
-  xlim(-1,3)
-```
 
-Yet another diagnostic
 
-```{r}
-#another diagnostic
-missing_study <- missing_study |>
-  mutate(only_imputed = ifelse(is.na(confounder_1_missing), confounder_1_CLQI, NA))
 
-ggplot(missing_study) +
-  geom_histogram(aes(x=only_imputed))
-```
 
-```{r}
-summary(missing_study$only_imputed)
-```
+***************************************************************
 
 `STEP 7`: Perform logistic regression (or anything else you’re looking at) using this newly imputed variable and obtain the parameter of interest
 
@@ -494,7 +450,7 @@ odds_b1 <- exp(log_odds_b1)
 odds_b1
 ```
 
-Now with 2
+*Now with 2*
 
 ```{r, eval=FALSE}
 #"test case", non-function version
@@ -529,7 +485,7 @@ odds_b1 <- exp(log_odds_b1)
 odds_b1
 ```
 
-More generally, *don't use confounder 1*: super terrible, even worse than complete case
+*Don't use confounder 1*: super terrible, even worse than complete case
 
 ```{r, eval=FALSE}
 #"test case", non-function version

@@ -130,7 +130,7 @@ Sensitivity Analysis to see how different our population distributions can be be
 ```{r}
 #create our data
 sample_size <- 1000
-study_A  <- data.frame(A_data = rchisq(sample_size, df = 5)) #the basis study
+study_A  <- data.frame(A_data = rchisq(sample_size, df = 7)) #the basis study
 study_B <- data.frame(B_data = rchisq(sample_size, df = 3)) #rf(sample_size, 6, 8)
 
 #simulation scenario: data from 0 to 1 in study B is missing, but A is all observed
@@ -214,8 +214,8 @@ for (i in 1:nrow(study_B)) {
 
 ```{r}
 ggplot(study_B) +
-  geom_density(aes(x = B_data, fill = "original"), alpha = 0.5) +
-  geom_density(aes(x = B_data_missing, fill = "imputed"), alpha = 0.5) + 
+  geom_histogram(aes(x = B_data, fill = "original"), alpha = 0.5) +
+  geom_histogram(aes(x = B_data_missing, fill = "imputed"), alpha = 0.5) + 
   xlim(0, 3)
 ```
 
