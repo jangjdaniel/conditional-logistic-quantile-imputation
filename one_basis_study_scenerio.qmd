@@ -159,6 +159,7 @@ create_multiple_datasets <- function(study_coefficient_dataset, sample_size) {
     df_1 <- df_1_values[i]
     df_2 <- df_2_values[i]
     
+    
     #apply the data generating mechanism function from the values above
     my_data <- create_data(sample_size = sample_size, 
                            a_0 = a_0, a_1 = a_1, 
