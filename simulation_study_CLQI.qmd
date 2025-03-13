@@ -342,7 +342,7 @@ prop <- find_prop_missing(missing_study, "confounder_1_missing")
 #generate ONE uniform value
 my_uniform_values <- uniform_values(specified_max = prop)
 
-#now apply the algorithm
+#now apply the algorithm; recall we need to loop through this 10 times for this to be MI
 missing_study_fixed_MI <- missing_study |>
   mutate(confounder_1_fixed_MI = ifelse(is.na(confounder_1_missing), 
                                         imputation_algorithm(basis_coefficients = basis_regression_coefficents, 
@@ -364,15 +364,63 @@ exp(log_reg_result$coefficients[2]) - 1.1 #bias
 The `fixed_MI` function performs the fixed multiple imputation algorithm of the CLQI algorithm (aka instead of a random uniform for every missing value, we choose one uniform value for the entire imputation, then do the imputations 10 times and combine using rubin's rules)
 
 ```{r}
-fixed_MI <- function() {
+fixed_MI <- function(num_iterations = 10, missing_dataset, 
+                    basis_coefficients, var_for_imputation, #var_for_imputation is no longer used
+                    specified_max) {
   
+  b1_coefficients <- numeric(num_iterations)
   
+  for(i in 1:num_iterations) {
   
+    #generate ONE uniform value
+    my_uniform_values <- uniform_values(specified_max = specified_max)
+    
+    
+    fixed_MI_dataset <- missing_dataset |>
+      mutate(confounder_1_fixed_MI = ifelse(is.na(confounder_1_missing), 
+                                            imputation_algorithm(basis_coefficients = basis_coefficients, 
+                                                                 study_for_imputation = missing_dataset, 
+                                                                 var_for_imputation = "confounder_1_missing", 
+                                                                 row_index = seq_len(nrow(missing_study)), 
+                                                                 u_vector = my_uniform_values),
+                                            confounder_1_missing)
+             )
+    
+    #then run logistic regression
+    log_reg_result <- glm(outcome ~ exposure + predictor + confounder_1_fixed_MI, 
+                          data = fixed_MI_dataset, 
+                          family = "binomial")
+      
+
+    #store the b1 parameter in a vector
+    b1_coefficients[i] <- exp(log_reg_result$coefficients[2])
+  }
+  
+  return(b1_coefficients)
 }
 ```
 
-```{r}
+```{r, eval=FALSE}
 #test case 2
+jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+                                       LD = 0, #placeholder
+                                       tau = 0.01)
+
+#our studies!
+basis_study <- as.data.frame(jokes_are_funny[[1]])
+missing_study <- as.data.frame(jokes_are_funny[[2]])
+the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
+
+#create basis coefficients
+basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
+prop <- find_prop_missing(missing_study, "confounder_1_missing")
+
+
+fixed_MI_results <- fixed_MI(missing_dataset = missing_study,
+                             basis_coefficients = basis_regression_coefficents,
+                             specified_max = prop)
+
+mean(fixed_MI_results) - 1.1 #here is our bias!
 ```
 
 
