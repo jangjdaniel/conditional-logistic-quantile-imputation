@@ -213,8 +213,10 @@ data_generating_mechanism <- function(sample_size, LD, tau) {
   min = 0
   max = ceiling(quantile(my_studies[[1]]$confounder_1, prob = 0.99))
   
-  my_studies[[1]] <- my_studies[[1]] |>
-    mutate(confounder_1_transformed = sapply(confounder_1, log_quant_transform, min, max))
+  suppressWarnings({ #a lot of warnings... some will be NA i know.
+    my_studies[[1]] <- my_studies[[1]] |>
+      mutate(confounder_1_transformed = sapply(confounder_1, log_quant_transform, min, max))
+  })
   
   #define the LD and make data missing based on that
   LoD <- my_coefficients[2,]$LoD
@@ -385,7 +387,7 @@ fixed_MI <- function(num_iterations = 10, missing_dataset,
                                             imputation_algorithm(basis_coefficients = basis_coefficients, 
                                                                  study_for_imputation = missing_dataset, 
                                                                  var_for_imputation = "confounder_1_missing", 
-                                                                 row_index = seq_len(nrow(missing_study)), 
+                                                                 row_index = seq_len(nrow(missing_dataset)), 
                                                                  u_vector = my_uniform_values),
                                             confounder_1_missing)
              )
@@ -398,12 +400,14 @@ fixed_MI <- function(num_iterations = 10, missing_dataset,
 
     #store the b1 parameter in a vector
     b1_coefficients[i] <- exp(log_reg_result$coefficients[2])
-    b1_variance[i] <- summary(log_reg_result)$coefficients[2,2]
+    b1_variance[i] <- (summary(log_reg_result)$coefficients[2,2])^2
   }
   
   #now put the parameter estimates and their associated variances in a dataframe and return that for each MI iteration
+  coefficients_and_variance <- data.frame(coefficients = b1_coefficients,
+                                          variance = b1_variance)
   
-  return(b1_coefficients)
+  return(coefficients_and_variance)
 }
 ```
 
@@ -484,12 +488,14 @@ CLQI_MI <- function(num_iterations = 10, missing_dataset,
       
     #extract exposure coefficients (b1)
     b1_coefficients[i] <- exp(log_reg_result$coefficients[2])
-    b1_variance[i] <- summary(log_reg_result)$coefficients[2,2]
+    b1_variance[i] <- summary(log_reg_result)$coefficients[2,2]^2
   }
   
   #now make a dataframe for the coefficients and variance for each MI iteration
+  coefficients_and_variance <- data.frame(coefficients = b1_coefficients,
+                                          variance = b1_variance)
   
-  return(b1_coefficients)
+  return(coefficients_and_variance)
 }
   
 ```
@@ -513,7 +519,9 @@ constant_imputation <- function(missing_dataset, var_for_imputation, LD) {
                           data = missing_dataset_constanted, 
                           family = "binomial")
   
-  return(exp(log_reg_result$coefficients[2])) #for the exposure variable
+  constant_imp_result <- c(exp(log_reg_result$coefficients[2]), summary(log_reg_result)$coefficients[2,2]^2)
+  
+  return(constant_imp_result) #for the exposure variable
 }
 ```
 
@@ -526,7 +534,7 @@ jokes_are_funny <- data_generating_mechanism(sample_size = 500,
 constant_imp_test <- constant_imputation(missing_dataset = as.data.frame(jokes_are_funny[2]), 
                          LD = as.data.frame(jokes_are_funny[3])$LoD[2]) #LD should be min(confounder_1_missing) in real testing
 
-constant_imp_test - 1.1 #bias
+constant_imp_test
 ```
 
 `complete_case_analysis` does... well... complete case analysis? takes away the NA and performs regression. BAD IN PRACTICE !
@@ -541,7 +549,9 @@ complete_case_analysis <- function(missing_dataset, var_for_imputation) {
                           data = CC_missing_dataset, 
                           family = "binomial")
   
-  return(exp(log_reg_result$coefficients[2])) #for the exposure variable
+  CC_results <- c(exp(log_reg_result$coefficients[2]), summary(log_reg_result)$coefficients[2,2]^2)
+  
+  return(CC_results) #for the exposure variable
 }
 ```
 
@@ -553,7 +563,7 @@ jokes_are_funny <- data_generating_mechanism(sample_size = 500,
 
 complete_case_test <- complete_case_analysis(missing_dataset = as.data.frame(jokes_are_funny[2]))
 
-complete_case_test - 1.1 #bias, should be pretty bad, because biomarker is MNAR
+complete_case_test
 ```
 
 `rubin_rules` is a function that performs rubin's rules on the MI results for both CLQI_MI and fixed_MI
@@ -561,12 +571,14 @@ complete_case_test - 1.1 #bias, should be pretty bad, because biomarker is MNAR
 ```{r}
 rubin_rules <- function(estimate_and_variance) {
   #the parameter result
-  
+  coefficient_MI <- mean(estimate_and_variance$coefficients)
   
   #the variance result
-  
+  variance_MI <- mean(estimate_and_variance$variance)
   
   #return a vector, where [1] is the estimate and [2] is the variance
+  my_vector <- c(coefficient_MI, variance_MI)
+  return(my_vector)
 }
 ```
 
@@ -616,23 +628,24 @@ one_iteration <- function(specified_sample_size, specified_tau) {
                                        tau = specified_tau)
   
   #our studies!
-  basis_study <- as.data.frame(sim_data[[1]])
-  missing_study <- as.data.frame(sim_data[[2]])
+  basis_study <- as.data.frame(my_data[[1]])
+  missing_study <- as.data.frame(my_data[[2]])
   the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
   
   #CLQI
     #the basis dataset runs conditional logistic quantile regression
-    basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
+    basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from my_data
     prop <- find_prop_missing(missing_study, "confounder_1_missing")
     
   #the CLQI_MI results
     CLQI_MI_results <- CLQI_MI(num_iterations = 10, 
-                               missing_dataset = missing_study, #created from sim_data
+                               missing_dataset = missing_study, #created from my_data
                                basis_coefficients = basis_regression_coefficents, 
                                var_for_imputation = "confounder_1_missing", #again not used
                                specified_max = prop) 
     
     #combine these results using rubin's rules (since the function returns the 10 iterations from MI)
+    CLQI_MI_results <- rubin_rules(CLQI_MI_results)
   
   #the fixed MI results
     fixed_MI_results <- fixed_MI(num_iterations = 10,
@@ -641,8 +654,9 @@ one_iteration <- function(specified_sample_size, specified_tau) {
                                  specified_max = prop)
     
     #combine these results using rubin's rules (since the function returns the 10 iterations from MI)
+    fixed_MI_results <- rubin_rules(fixed_MI_results)
     
-  
+###############################################################################################
   #the constant imputation results
     constant_imputation_sqrt_2_results <- constant_imputation(missing_dataset = missing_study, 
                                                               LD = the_LD)
@@ -650,56 +664,84 @@ one_iteration <- function(specified_sample_size, specified_tau) {
   #the complete case results
     complete_case_results <- complete_case_analysis(missing_dataset = missing_study)
   
-    
+###############################################################################################
   #turning this into a vector: the specific order of our methods will matter
-  imputation_results_vector <- c(CLQI_MI_results, fixed_MI_results, 
-                                 constant_imputation_sqrt_2_results, complete_case_results)
+  imputation_results_vector <- data.frame(estimate_CLQI = CLQI_MI_results[1],
+                                          variance_CLQI = CLQI_MI_results[2],
+                                          estimate_fixed_MI = fixed_MI_results[1],
+                                          variance_fixed_MI = fixed_MI_results[2],
+                                          estimate_constant = constant_imputation_sqrt_2_results[1],
+                                          variance_constant = constant_imputation_sqrt_2_results[2],
+                                          estimate_CC = complete_case_results[1],
+                                          variance_CC = complete_case_results[2])
     
-  return(CLQI_MI_results)
+  return(imputation_results_vector)
+}
+```
+
+```{r, eval=FALSE}
+#test case!
+one_iteration(specified_sample_size = 500, specified_tau = 0.01)
+```
+
+Last but not least, `repetera_full_simulation` is the function that runs `one_iteration` the specified number of times (for readability sakes... everything should be a function)! This is Swedish for "repeat" (duh) to celebrate my time in Stockholm :)
+
+This doesn't necessarily have to be a function, but for repeating this so many times, I think it should...
+
+Lastly, we take these results for each method tested (CLQI, Fixed MI, constant, CC) and calculate the bias, MSE, *coverage rate*, *etc*
+
+```{r}
+repetera_full_simulation <- function(specified_sample_size, specified_tau, sim_size, b1_true) {
+  
+  sim_results <- purrr::map_dfr(1:sim_size, ~ {
+  
+  # We go through one iteration of the simulation
+  parameter_est <- one_iteration(specified_sample_size = specified_sample_size, specified_tau = specified_tau)
+  
+  # Return the result of the current iteration
+  parameter_est
+  })
+  
+  #after, we will calculate the statistics we desire... STILL HAVE NOT DONE COVERAGE YET
+    sim_results_send <- sim_results |>
+      mutate(bias_CLQI = estimate_CLQI - b1_true,
+             MSE_CLQI = (bias_CLQI)^2 + variance_CLQI,
+             bias_fixed_MI = estimate_fixed_MI - b1_true,
+             MSE_fixed_MI = (bias_fixed_MI)^2 + variance_fixed_MI,
+             bias_constant = estimate_constant - b1_true,
+             MSE_constant = (bias_constant)^2 + variance_constant,
+             bias_CC = estimate_CC - b1_true,
+             MSE_CC = (bias_CC)^2 + variance_CC) |>
+      dplyr::select(bias_CLQI, MSE_CLQI, bias_fixed_MI, MSE_fixed_MI, 
+                    bias_constant, MSE_constant, bias_CC, MSE_CC)
+  
+  return(sim_results_send)
 }
 ```
 
 **************************************************************************************
 
-Running the code 1000 times... note the runtime
+This purrr loop (like a for loop but more efficient for R) just runs the `one_iteration` function multiple times (1000 times for a sim study). We get our estimates for the coefficient, as well as its associated variance. 
 
 ```{r}
-specified_sample_size <- 500
-specified_tau <- 0.01
-sim_size <- 10
+tictoc::tic() #start the timer to check
 
-#important things to initalize for the iteration
-bias_results <- numeric(sim_size)
-MSE_results <- numeric(sim_size)
-a_1_true <- exp(log(1.1))
-```
+sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 500, 
+                                                 specified_tau = 0.01, 
+                                                 sim_size = 1000,
+                                                 b1_true = exp(log(1.1)))
 
-```{r}
-tictoc::tic() #just for computation time checking
-
-# Use purrr to iterate over simulations
-sim_results <- purrr::map_dfr(1:sim_size, ~ {
-  
-  #we go through one iteration of the 
-  parameter_est <- one_iteration(specified_sample_size = 500, specified_tau = 0.01)
-  
-  
-  #calculate bias and MSE for each iteration (NOT SURE IF THIS IS CORRECT, DONT I DO THIS AFTER I FORGOT ****************)
-  bias_val <- mean(parameter_est) - a_1_true
-  MSE_val <- bias_val^2 + var(parameter_est) #is this correct?
-  
-  #return values as a data frame for easy handling
-  data.frame(bias = bias_val, MSE = MSE_val)
-  }
-)
-
-tictoc::toc() #finish the computation time
-```
-
-```{r}
 #save the results and look at them!
+saveRDS(sim_setting_1_results, file="./simulation_results/sim_setting_1.rds")
 
-ggplot(data=sim_results, aes(x=bias)) +
+tictoc::toc() # Finish the computation time
+```
+
+```{r}
+sim_setting_1_results <- readRDS(file="./simulation_results/sim_setting_1.rds")
+
+ggplot(data=sim_setting_1_results, aes(x=bias_CLQI)) +
   geom_density() +
+  geom_vline(aes(xintercept = mean(bias_CLQI)), color = "red", linetype = "dashed", size = 1) +
   theme_bw()
 ```
