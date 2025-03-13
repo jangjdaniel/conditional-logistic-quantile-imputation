@@ -363,7 +363,7 @@ CLQI_algorithm <- function(missing_dataset, basis_coefficients, specified_max) {
 
 ```{r}
 CLQI_MI <- function(num_iterations = 10, missing_dataset, 
-                    basis_coefficients, var_for_imputation,
+                    basis_coefficients, var_for_imputation, #var_for_imputation is no longer used
                     specified_max) {
   
   b1_coefficients <- numeric(num_iterations) #initialize vector
@@ -384,6 +384,63 @@ CLQI_MI <- function(num_iterations = 10, missing_dataset,
   return(b1_coefficients)
 }
   
+```
+
+`constant_imputation` applies constant imputation to all missing values for *confounder_1_missing* and presents the b1 coefficient as a result
+
+```{r}
+constant_imputation <- function(missing_dataset, var_for_imputation, LD) {
+  
+  missing_dataset_constanted <- missing_dataset |>
+    dplyr::mutate(confounder_1_sqrt2_imp = ifelse(is.na(confounder_1_missing), 
+                                                  (LD / sqrt(2)), 
+                                                  confounder_1_missing))
+  
+  log_reg_result <- glm(outcome ~ exposure + predictor + confounder_1_sqrt2_imp, 
+                          data = missing_dataset_constanted, 
+                          family = "binomial")
+  
+  return(exp(log_reg_result$coefficients[2])) #for the exposure variable
+}
+```
+
+```{r, eval=FALSE}
+#test case
+jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+                                       LD = 0, #placeholder
+                                       tau = 0.01)
+
+constant_imp_test <- constant_imputation(missing_dataset = as.data.frame(jokes_are_funny[2]), 
+                         LD = as.data.frame(jokes_are_funny[3])$LoD[2]) #LD should be min(confounder_1_missing) in real testing
+
+constant_imp_test - 1.1 #bias
+```
+
+`complete_case_analysis` does... well... complete case analysis? takes away the NA and performs regression. BAD IN PRACTICE !
+
+```{r}
+complete_case_analysis <- function(missing_dataset, var_for_imputation) {
+  
+  CC_missing_dataset <- missing_dataset |>
+    filter(!is.na(confounder_1_missing)) #only keep the values where confounder_1_missing is still observed
+  
+  log_reg_result <- glm(outcome ~ exposure + predictor + confounder_1_missing, 
+                          data = CC_missing_dataset, 
+                          family = "binomial")
+  
+  return(exp(log_reg_result$coefficients[2])) #for the exposure variable
+}
+```
+
+```{r, eval=FALSE}
+#another test case
+jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+                                             LD = 0, #placeholder
+                                             tau = 0.01)
+
+complete_case_test <- complete_case_analysis(missing_dataset = as.data.frame(jokes_are_funny[2]))
+
+complete_case_test - 1.1 #bias, should be pretty bad, because biomarker is MNAR
 ```
 
 **************************************************************************************
@@ -418,148 +475,89 @@ The workflow will look as follows *for each iteration*:
 
 **************************************************************************************
 
-This function will provide one iteration of the simulation, utilizing most, if not all, the functions we defined previously
+`one_iteration` will provide one iteration of the simulation, utilizing most, if not all, the functions we defined previously
+This function will return a list of some important values 
 
 ```{r}
-specified_sample_size <- 500
-specified_tau <- 0.01
-
 one_iteration <- function(specified_sample_size, specified_tau) {
   #generate the data
+  
+  #create the data here so we can do the same imputation with the same data
   my_data <- data_generating_mechanism(sample_size = specified_sample_size, 
                                        LD = 0, 
                                        tau = specified_tau)
   
-  basis_study <- as.data.frame(my_data[[1]])
-  missing_study <- as.data.frame(my_data[[2]])
+  #our studies!
+  basis_study <- as.data.frame(sim_data[[1]])
+  missing_study <- as.data.frame(sim_data[[2]])
   
-  #the basis dataset runs conditional logistic quantile regression
-  basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study)
-  prop <- find_prop_missing(missing_study, "confounder_1_missing")
+  #CLQI
+    #the basis dataset runs conditional logistic quantile regression
+    basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
+    prop <- find_prop_missing(missing_study, "confounder_1_missing")
+    
+    #the CLQI_MI results
+    CLQI_MI_results <- CLQI_MI(num_iterations = 10, 
+                               missing_dataset = missing_study, #created from sim_data
+                               basis_coefficients = basis_regression_coefficents, 
+                               var_for_imputation = "confounder_1_missing",
+                               specified_max = prop) 
   
+  #the fixed MI results
+    fixed_MI_results <- "placeholder"
   
-  CLQI_MI_results <- CLQI_MI(num_iterations = 10, 
-                             missing_dataset = missing_study, 
-                             basis_coefficients = basis_regression_coefficents, 
-                             var_for_imputation = "ooga",
-                             specified_max = prop) 
+  #the constant imputation results
+    constant_imputation_sqrt_2_results <- "placeholder"
   
+  #the complete case results
+    complete_case_results <- "placeholder"
   
   
   return(CLQI_MI_results)
 }
-
-a <- one_iteration(specified_sample_size = 500, specified_tau = 0.01)
-mean(a)
 ```
-
-
-
-
 
 **************************************************************************************
 
-
-
-
+Running the code 1000 times... note the runtime
 
 ```{r}
-#check the runtime here
-tictoc::tic()
-CLQI_MI_results <- CLQI_MI(missing_dataset = missing_study, 
-                           basis_coefficients = coefficient_data,
-                           var_for_imputation = "confounder_1_missing")
-tictoc::toc()
-```
+specified_sample_size <- 500
+specified_tau <- 0.01
+sim_size <- 10
 
-`STEP 9`: Aggregate with Rubin’s Rules and calculate necessary values
-
-```{r}
-#recall that the true value of the coefficient is exp(a_1)
-a_1_true <- exp(log(1.1))
-
-mean(CLQI_MI_results) - a_1_true #bias... super low
-```
-
-***************************************************************************************************************
-
-Now we are going to do some simulations to get a distribution for bias. Note the runtime
-
-```{r}
-sim_size <- 20
+#important things to initalize for the iteration
 bias_results <- numeric(sim_size)
 MSE_results <- numeric(sim_size)
-
 a_1_true <- exp(log(1.1))
+```
 
-tictoc::tic()
+```{r}
+tictoc::tic() #just for computation time checking
 
 # Use purrr to iterate over simulations
 sim_results <- purrr::map_dfr(1:sim_size, ~ {
   
-  CLQI_MI_results <- CLQI_MI(missing_dataset = missing_study, 
-                             basis_coefficients = coefficient_data,
-                             var_for_imputation = "confounder_1_missing")
+  #we go through one iteration of the 
+  parameter_est <- one_iteration(specified_sample_size = 500, specified_tau = 0.01)
   
-  # Calculate bias and MSE for each iteration
-  bias_val <- mean(CLQI_MI_results) - a_1_true
-  MSE_val <- bias_val^2 + var(CLQI_MI_results)
   
-  # Return values as a data frame for easy handling
+  #calculate bias and MSE for each iteration (NOT SURE IF THIS IS CORRECT, DONT I DO THIS AFTER I FORGOT ****************)
+  bias_val <- mean(parameter_est) - a_1_true
+  MSE_val <- bias_val^2 + var(parameter_est) #is this correct?
+  
+  #return values as a data frame for easy handling
   data.frame(bias = bias_val, MSE = MSE_val)
   }
 )
 
+tictoc::toc() #finish the computation time
+```
+
+```{r}
+#save the results and look at them!
+
 ggplot(data=sim_results, aes(x=bias)) +
-  geom_histogram(bins=5)
+  geom_density() +
+  theme_bw()
 ```
-
-Coverage example: maybe should implement in the CLQI function
-
-```{r}
-loggy <- glm(outcome ~ exposure + predictor + confounder_1_CLQI, 
-                          data = missing_study, family = "binomial")
-
-summary(loggy)
-
-#get the p-value? or maybe get the standard error
-
-
-#indicator that we have a significant value or not...
-
-```
-
-
-***************************************************************************************************************
-
-Make sure we implement the other imputation methods under the same setting! (especially fixed imputation)
-
-Complete case: use `confounder_1_missing` and just ignore all NA values when doing regression
-
-```{r}
-
-```
-
-Constant Imputation: 
-
-```{r}
-missing_study <- missing_study |>
-  mutate(confounder_1_constant_imputed = ifelse(is.na(confounder_1_missing), sqrt(2), confounder_1_missing))
-```
-
-Fixed Imputation:
-
-```{r}
-
-```
-
-***************************************************************************************************************
-
-Save all this information to show later!
-
-```{r}
-
-```
-
-*Use a new qmd document to do the other scenerios and clean everything up*
-*Some of the code here really was for demonstration purposes*
