@@ -359,6 +359,9 @@ log_reg_result <- glm(outcome ~ exposure + predictor + confounder_1_fixed_MI,
                           family = "binomial")
   
 exp(log_reg_result$coefficients[2]) - 1.1 #bias
+
+#variance
+(summary(log_reg_result)$coefficients[2, 2])^2 #the first 2 is for exposure, and the second 2 is for accessing the standard error
 ```
 
 The `fixed_MI` function performs the fixed multiple imputation algorithm of the CLQI algorithm (aka instead of a random uniform for every missing value, we choose one uniform value for the entire imputation, then do the imputations 10 times and combine using rubin's rules)
@@ -369,6 +372,7 @@ fixed_MI <- function(num_iterations = 10, missing_dataset,
                     specified_max) {
   
   b1_coefficients <- numeric(num_iterations)
+  b1_variance <- numeric(num_iterations)
   
   for(i in 1:num_iterations) {
   
@@ -394,7 +398,10 @@ fixed_MI <- function(num_iterations = 10, missing_dataset,
 
     #store the b1 parameter in a vector
     b1_coefficients[i] <- exp(log_reg_result$coefficients[2])
+    b1_variance[i] <- summary(log_reg_result)$coefficients[2,2]
   }
+  
+  #now put the parameter estimates and their associated variances in a dataframe and return that for each MI iteration
   
   return(b1_coefficients)
 }
@@ -464,6 +471,7 @@ CLQI_MI <- function(num_iterations = 10, missing_dataset,
                     specified_max) {
   
   b1_coefficients <- numeric(num_iterations) #initialize vector
+  b1_variance <- numeric(num_iterations) #initialize vector
   
   for(i in 1:num_iterations) {
     #run the algorithm
@@ -476,7 +484,10 @@ CLQI_MI <- function(num_iterations = 10, missing_dataset,
       
     #extract exposure coefficients (b1)
     b1_coefficients[i] <- exp(log_reg_result$coefficients[2])
+    b1_variance[i] <- summary(log_reg_result)$coefficients[2,2]
   }
+  
+  #now make a dataframe for the coefficients and variance for each MI iteration
   
   return(b1_coefficients)
 }
@@ -545,6 +556,21 @@ complete_case_test <- complete_case_analysis(missing_dataset = as.data.frame(jok
 complete_case_test - 1.1 #bias, should be pretty bad, because biomarker is MNAR
 ```
 
+`rubin_rules` is a function that performs rubin's rules on the MI results for both CLQI_MI and fixed_MI
+
+```{r}
+rubin_rules <- function(estimate_and_variance) {
+  #the parameter result
+  
+  
+  #the variance result
+  
+  
+  #return a vector, where [1] is the estimate and [2] is the variance
+}
+```
+
+
 **************************************************************************************
 
 We will now perform Setting 1 of the simulation study. This will serve as a closer step-by-step guide on how the study is performed
@@ -599,15 +625,23 @@ one_iteration <- function(specified_sample_size, specified_tau) {
     basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
     prop <- find_prop_missing(missing_study, "confounder_1_missing")
     
-    #the CLQI_MI results
+  #the CLQI_MI results
     CLQI_MI_results <- CLQI_MI(num_iterations = 10, 
                                missing_dataset = missing_study, #created from sim_data
                                basis_coefficients = basis_regression_coefficents, 
-                               var_for_imputation = "confounder_1_missing",
+                               var_for_imputation = "confounder_1_missing", #again not used
                                specified_max = prop) 
+    
+    #combine these results using rubin's rules (since the function returns the 10 iterations from MI)
   
   #the fixed MI results
-    fixed_MI_results <- "placeholder"
+    fixed_MI_results <- fixed_MI(num_iterations = 10,
+                                 missing_dataset = missing_study,
+                                 basis_coefficients = basis_regression_coefficents,
+                                 specified_max = prop)
+    
+    #combine these results using rubin's rules (since the function returns the 10 iterations from MI)
+    
   
   #the constant imputation results
     constant_imputation_sqrt_2_results <- constant_imputation(missing_dataset = missing_study, 
