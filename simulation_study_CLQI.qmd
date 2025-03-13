@@ -285,12 +285,12 @@ uniform_values <- function(specified_max) {
 }
 ```
 
-`fixed_MI` is the function that implements fixed MI. 
+`imputation_algorithm` is the function that implements imputation for one missing value
 We can use tidyverse functionality to slightly modify the use of this function, *although that may be computationally inefficient*
 
 ```{r}
-fixed_MI <- function(basis_coefficients, study_for_imputation, 
-                     var_for_imputation, row_index, u_vector) {
+imputation_algorithm <- function(basis_coefficients, study_for_imputation, 
+                                 var_for_imputation, row_index, u_vector) {
   
   u_vector <- u_vector
   floor_quantile <- basis_coefficients[u_vector[2], ] #floor
@@ -320,12 +320,61 @@ fixed_MI <- function(basis_coefficients, study_for_imputation,
                                                    min = min_imp, 
                                                    max = max_imp)
   
-  #unif_val <- u_vector[1]
-  #return(unif_val)
-    
   return(imputed_value_regular)
 }
 ```
+
+```{r, eval=FALSE}
+#test case!
+jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+                                       LD = 0, #placeholder
+                                       tau = 0.01)
+
+#our studies!
+basis_study <- as.data.frame(jokes_are_funny[[1]])
+missing_study <- as.data.frame(jokes_are_funny[[2]])
+the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
+
+#create basis coefficients
+basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
+prop <- find_prop_missing(missing_study, "confounder_1_missing")
+
+#generate ONE uniform value
+my_uniform_values <- uniform_values(specified_max = prop)
+
+#now apply the algorithm
+missing_study_fixed_MI <- missing_study |>
+  mutate(confounder_1_fixed_MI = ifelse(is.na(confounder_1_missing), 
+                                        imputation_algorithm(basis_coefficients = basis_regression_coefficents, 
+                                                 study_for_imputation = missing_study, 
+                                                 var_for_imputation = "confounder_1_missing",
+                                                 row_index = seq_len(nrow(missing_study)), 
+                                                 u_vector = my_uniform_values), 
+                                        confounder_1_missing))
+
+#this function doesn't automatically do the regression sadly
+
+log_reg_result <- glm(outcome ~ exposure + predictor + confounder_1_fixed_MI, 
+                          data = missing_study_fixed_MI, 
+                          family = "binomial")
+  
+exp(log_reg_result$coefficients[2]) - 1.1 #bias
+```
+
+The `fixed_MI` function performs the fixed multiple imputation algorithm of the CLQI algorithm (aka instead of a random uniform for every missing value, we choose one uniform value for the entire imputation, then do the imputations 10 times and combine using rubin's rules)
+
+```{r}
+fixed_MI <- function() {
+  
+  
+  
+}
+```
+
+```{r}
+#test case 2
+```
+
 
 `CLQI_algorithm` is the function that applies the previous few functions and imputes a unique imputed value to each missing observation. This returns a dataset with one full imputation, ready for checking
 
@@ -342,7 +391,7 @@ CLQI_algorithm <- function(missing_dataset, basis_coefficients, specified_max) {
     if(is.na(missing_dataset$confounder_1_missing[row_index])) {
       my_uniform_values <- uniform_values(specified_max) #generate unique uniform values
       
-      imputed_value <- fixed_MI(basis_coefficients = basis_coefficients, 
+      imputed_value <- imputation_algorithm(basis_coefficients = basis_coefficients, 
                                 study_for_imputation = missing_dataset, 
                                 var_for_imputation = "confounder_1_missing",
                                 row_index = row_index, #to get the right one
@@ -385,6 +434,11 @@ CLQI_MI <- function(num_iterations = 10, missing_dataset,
 }
   
 ```
+
+```{r, eval=FALSE}
+#test case!
+```
+
 
 `constant_imputation` applies constant imputation to all missing values for *confounder_1_missing* and presents the b1 coefficient as a result
 
@@ -490,6 +544,7 @@ one_iteration <- function(specified_sample_size, specified_tau) {
   #our studies!
   basis_study <- as.data.frame(sim_data[[1]])
   missing_study <- as.data.frame(sim_data[[2]])
+  the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
   
   #CLQI
     #the basis dataset runs conditional logistic quantile regression
@@ -507,12 +562,17 @@ one_iteration <- function(specified_sample_size, specified_tau) {
     fixed_MI_results <- "placeholder"
   
   #the constant imputation results
-    constant_imputation_sqrt_2_results <- "placeholder"
-  
+    constant_imputation_sqrt_2_results <- constant_imputation(missing_dataset = missing_study, 
+                                                              LD = the_LD)
+
   #the complete case results
-    complete_case_results <- "placeholder"
+    complete_case_results <- complete_case_analysis(missing_dataset = missing_study)
   
-  
+    
+  #turning this into a vector: the specific order of our methods will matter
+  imputation_results_vector <- c(CLQI_MI_results, fixed_MI_results, 
+                                 constant_imputation_sqrt_2_results, complete_case_results)
+    
   return(CLQI_MI_results)
 }
 ```
