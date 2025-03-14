@@ -824,7 +824,7 @@ tictoc::tic() #start the timer to check
 
 sim_setting_test_results <- repetera_full_simulation(specified_sample_size = 500, 
                                                  specified_tau = 0.01, 
-                                                 specified_LD = 0.30, #30% missing data
+                                                 specified_LD = 0.95, #95% missing data
                                                  sim_size = 1000,
                                                  b1_true = exp(log(1.1)))
 
@@ -834,4 +834,14 @@ tictoc::toc() # Finish the computation time
 ```{r}
 #save the results and look at them!
 saveRDS(sim_setting_test_results, file="./simulation_results/sim_setting_test.rds")
+```
+
+```{r}
+sim_setting_test_coverage <- sim_setting_test_results |>
+  summarize(cov_perc_CLQI = sum(coverage_CLQI) / nrow(sim_setting_1_results), 
+            cov_perc_fixed_MI = sum(coverage_fixed_MI) / nrow(sim_setting_1_results), 
+            cov_perc_constant = sum(coverage_constant) / nrow(sim_setting_1_results), 
+            cov_perc_CC = sum(coverage_CC) / nrow(sim_setting_1_results))
+
+sim_setting_test_coverage
 ```
