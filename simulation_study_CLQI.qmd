@@ -92,9 +92,6 @@ coefficient_generator <- function(tau, num_studies,
         mutate(b_0 = b_0) |>
         rename(b_1 = "V1", b_2 = "V2", b_3 = "V3") |>
         dplyr::select(b_0, b_1, b_2, b_3)
-      
-  #we need to set a LoD value for these studies that has slight variation
-  LoD <- data.frame(LoD = round(runif(num_studies, min = 1.6, max = 2.4), 3))
   
   #lastly, we need a range of degrees of freedom for the confounder generation
   #there will be two just in case I want to use an F distribution
@@ -102,7 +99,7 @@ coefficient_generator <- function(tau, num_studies,
                             df_2 = round(runif(num_studies, min = 3, max = 7)))
   
   #now combine these results
-  coefficients <- cbind(study_counts, alpha_coefficients, beta_coefficients, LoD, deg_freedom)
+  coefficients <- cbind(study_counts, alpha_coefficients, beta_coefficients, deg_freedom)
   
   return(coefficients)
 }
@@ -220,17 +217,19 @@ data_generating_mechanism <- function(sample_size, LD, tau) {
   })
   
   #define the LD and make data missing based on that
-  LoD <- my_coefficients[2,]$LoD
+  biomarker_values <- my_studies[[2]]$confounder_1
+  LoD_value <- as.numeric(quantile(biomarker_values, LD)) #must be given as a decimal
   
   #now we made the data missing based on our given LD, and also transform this value
   my_studies[[2]] <- my_studies[[2]] |>
-    mutate(confounder_1_missing = ifelse(confounder_1 >= LoD, confounder_1, NA))
+    mutate(confounder_1_missing = ifelse(confounder_1 >= LoD_value, confounder_1, NA))
   
   #just to be able to look into my_coefficients later
   my_studies <- list(my_studies[[1]], my_studies[[2]], my_coefficients)
   return(my_studies) #return list of studies with missingness added
 }
 ```
+
 
 **************************************************************************************
 
@@ -620,12 +619,12 @@ The workflow will look as follows *for each iteration*:
 This function will return a list of some important values 
 
 ```{r}
-one_iteration <- function(specified_sample_size, specified_tau) {
+one_iteration <- function(specified_sample_size, specified_tau, specified_LD) {
   #generate the data
   
   #create the data here so we can do the same imputation with the same data
   my_data <- data_generating_mechanism(sample_size = specified_sample_size, 
-                                       LD = 0, 
+                                       LD = specified_LD, 
                                        tau = specified_tau)
   
   #our studies!
@@ -682,7 +681,9 @@ one_iteration <- function(specified_sample_size, specified_tau) {
 
 ```{r, eval=FALSE}
 #test case!
-one_iteration(specified_sample_size = 500, specified_tau = 0.01)
+one_iteration(specified_sample_size = 500, 
+              specified_tau = 0.01, 
+              specified_LD = 0.30)
 ```
 
 `repetera_full_simulation` is the function that runs `one_iteration` the specified number of times (for readability sakes... everything should be a function)! This is Swedish for "repeat" (duh) to celebrate my time in Stockholm :)
@@ -692,12 +693,14 @@ This doesn't necessarily have to be a function, but for repeating this so many t
 Lastly, we take these results for each method tested (CLQI, Fixed MI, constant, CC) and calculate the bias, MSE, *coverage rate*, *etc*
 
 ```{r}
-repetera_full_simulation <- function(specified_sample_size, specified_tau, sim_size, b1_true) {
+repetera_full_simulation <- function(specified_sample_size, specified_tau, specified_LD, sim_size, b1_true) {
   
   sim_results <- purrr::map_dfr(1:sim_size, ~ {
   
   # We go through one iteration of the simulation
-  parameter_est <- one_iteration(specified_sample_size = specified_sample_size, specified_tau = specified_tau)
+  parameter_est <- one_iteration(specified_sample_size = specified_sample_size, 
+                                 specified_tau = specified_tau,
+                                 specified_LD = specified_LD)
   
   # Return the result of the current iteration
   parameter_est
@@ -735,8 +738,9 @@ This purrr loop (like a for loop but more efficient for R) just runs the `one_it
 tictoc::tic() #start the timer to check
 
 sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 500, 
-                                                 specified_tau = 0, 
-                                                 sim_size = 100,
+                                                 specified_tau = 0.01, 
+                                                 specified_LD = 0.30, #30% missing data
+                                                 sim_size = 1000,
                                                  b1_true = exp(log(1.1)))
 
 tictoc::toc() # Finish the computation time
@@ -758,12 +762,12 @@ ggplot(data=sim_setting_1_results, aes(x=bias_fixed_MI)) +
 ```
 
 ```{r}
-sim_setting_1_results_bias <- sim_setting_1_results %>%
+sim_setting_1_results_bias <- sim_setting_1_results |>
   pivot_longer(cols = c(bias_fixed_MI, bias_CLQI, bias_constant, bias_CC), 
                names_to = "bias_type", 
                values_to = "bias_value")
 
-# Plot the density of each bias type
+# Plot the density of each bias type with separate graphs
 ggplot(sim_setting_1_results_bias, aes(x = bias_value, fill = bias_type)) +
   geom_density(alpha = 0.25) +  # Adjust transparency with alpha
   geom_vline(data = sim_setting_1_results_bias %>%
@@ -774,11 +778,12 @@ ggplot(sim_setting_1_results_bias, aes(x = bias_value, fill = bias_type)) +
   theme_bw() +
   labs(title = "Density Plots of Bias Types", x = "Bias Value", y = "Density") +
   scale_fill_manual(values = c("blue", "red", "green", "purple")) +  # Adjust colors as desired
-  scale_color_manual(values = c("blue", "red", "green", "purple"))  # Same color scheme for the lines
+  scale_color_manual(values = c("blue", "red", "green", "purple")) +  # Same color scheme for the lines
+  facet_wrap(~bias_type, scales = "free")  # Separate graphs for each bias type
 ```
 
 ```{r}
-sim_setting_1_results_MSE <- sim_setting_1_results %>%
+sim_setting_1_results_MSE <- sim_setting_1_results |>
   pivot_longer(cols = c(MSE_fixed_MI, MSE_CLQI, MSE_constant, MSE_CC), 
                names_to = "MSE_type", 
                values_to = "MSE_value")
@@ -792,9 +797,10 @@ ggplot(sim_setting_1_results_MSE, aes(x = MSE_value, fill = MSE_type)) +
              aes(xintercept = mean_MSE, color = MSE_type), 
              linetype = "dashed", size = 1) +
   theme_bw() +
-  labs(title = "Density Plots of Bias Types", x = "Bias Value", y = "Density") +
+  labs(title = "Density Plots of MSE Types", x = "MSE Value", y = "Density") +
   scale_fill_manual(values = c("blue", "red", "green", "purple")) +  # Adjust colors as desired
   scale_color_manual(values = c("blue", "red", "green", "purple")) + # Same color scheme for the lines
+  facet_wrap(~MSE_type, scales = "free")  +
   xlim(0,0.5)
 ```
 
@@ -808,3 +814,24 @@ sim_setting_1_coverage <- sim_setting_1_results |>
 sim_setting_1_coverage
 ```
 
+
+*************************************************************************************************************
+
+Other tests
+
+```{r}
+tictoc::tic() #start the timer to check
+
+sim_setting_test_results <- repetera_full_simulation(specified_sample_size = 500, 
+                                                 specified_tau = 0.01, 
+                                                 specified_LD = 0.30, #30% missing data
+                                                 sim_size = 1000,
+                                                 b1_true = exp(log(1.1)))
+
+tictoc::toc() # Finish the computation time
+```
+
+```{r}
+#save the results and look at them!
+saveRDS(sim_setting_test_results, file="./simulation_results/sim_setting_test.rds")
+```
