@@ -10,6 +10,7 @@ My hope is that this qmd is easily readable. If not, please contact me: djang26@
 ```{r}
 #necessary libraries
 library(tidyverse)
+library(ggplot2)
 library(quantreg)
 library(MASS)
 library(purrr)
@@ -684,7 +685,7 @@ one_iteration <- function(specified_sample_size, specified_tau) {
 one_iteration(specified_sample_size = 500, specified_tau = 0.01)
 ```
 
-Last but not least, `repetera_full_simulation` is the function that runs `one_iteration` the specified number of times (for readability sakes... everything should be a function)! This is Swedish for "repeat" (duh) to celebrate my time in Stockholm :)
+`repetera_full_simulation` is the function that runs `one_iteration` the specified number of times (for readability sakes... everything should be a function)! This is Swedish for "repeat" (duh) to celebrate my time in Stockholm :)
 
 This doesn't necessarily have to be a function, but for repeating this so many times, I think it should...
 
@@ -702,18 +703,25 @@ repetera_full_simulation <- function(specified_sample_size, specified_tau, sim_s
   parameter_est
   })
   
+  #now for coverage: need to calculate based on a condition
+  t_star <- qt(0.975, specified_sample_size - 1)
+  
+  
   #after, we will calculate the statistics we desire... STILL HAVE NOT DONE COVERAGE YET
     sim_results_send <- sim_results |>
       mutate(bias_CLQI = estimate_CLQI - b1_true,
              MSE_CLQI = (bias_CLQI)^2 + variance_CLQI,
+             coverage_CLQI = ifelse(estimate_CLQI - (t_star*sqrt(variance_CLQI)) <= b1_true & b1_true <= estimate_CLQI + (t_star*sqrt(variance_CLQI)), 1, 0),
              bias_fixed_MI = estimate_fixed_MI - b1_true,
              MSE_fixed_MI = (bias_fixed_MI)^2 + variance_fixed_MI,
+             coverage_fixed_MI = ifelse(estimate_fixed_MI - (t_star*sqrt(variance_fixed_MI)) <= b1_true & b1_true <= estimate_fixed_MI + (t_star*sqrt(variance_fixed_MI)), 1, 0),
              bias_constant = estimate_constant - b1_true,
              MSE_constant = (bias_constant)^2 + variance_constant,
+             coverage_constant = ifelse(estimate_constant - (t_star*sqrt(variance_constant)) <= b1_true & b1_true <= estimate_constant + (t_star*sqrt(variance_constant)), 1, 0),
              bias_CC = estimate_CC - b1_true,
-             MSE_CC = (bias_CC)^2 + variance_CC) |>
-      dplyr::select(bias_CLQI, MSE_CLQI, bias_fixed_MI, MSE_fixed_MI, 
-                    bias_constant, MSE_constant, bias_CC, MSE_CC)
+             MSE_CC = (bias_CC)^2 + variance_CC,
+             coverage_CC = ifelse(estimate_CC - (t_star*sqrt(variance_CC)) <= b1_true & b1_true <= estimate_CC + (t_star*sqrt(variance_CC)), 1, 0)
+             ) 
   
   return(sim_results_send)
 }
@@ -727,21 +735,76 @@ This purrr loop (like a for loop but more efficient for R) just runs the `one_it
 tictoc::tic() #start the timer to check
 
 sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 500, 
-                                                 specified_tau = 0.01, 
-                                                 sim_size = 1000,
+                                                 specified_tau = 0, 
+                                                 sim_size = 100,
                                                  b1_true = exp(log(1.1)))
-
-#save the results and look at them!
-saveRDS(sim_setting_1_results, file="./simulation_results/sim_setting_1.rds")
 
 tictoc::toc() # Finish the computation time
 ```
 
 ```{r}
+#save the results and look at them!
+saveRDS(sim_setting_1_results, file="./simulation_results/sim_setting_1.rds")
+```
+
+
+```{r}
 sim_setting_1_results <- readRDS(file="./simulation_results/sim_setting_1.rds")
 
-ggplot(data=sim_setting_1_results, aes(x=bias_CLQI)) +
+ggplot(data=sim_setting_1_results, aes(x=bias_fixed_MI)) +
   geom_density() +
   geom_vline(aes(xintercept = mean(bias_CLQI)), color = "red", linetype = "dashed", size = 1) +
   theme_bw()
 ```
+
+```{r}
+sim_setting_1_results_bias <- sim_setting_1_results %>%
+  pivot_longer(cols = c(bias_fixed_MI, bias_CLQI, bias_constant, bias_CC), 
+               names_to = "bias_type", 
+               values_to = "bias_value")
+
+# Plot the density of each bias type
+ggplot(sim_setting_1_results_bias, aes(x = bias_value, fill = bias_type)) +
+  geom_density(alpha = 0.25) +  # Adjust transparency with alpha
+  geom_vline(data = sim_setting_1_results_bias %>%
+               group_by(bias_type) %>%
+               summarize(mean_bias = mean(bias_value)), 
+             aes(xintercept = mean_bias, color = bias_type), 
+             linetype = "dashed", size = 1) +
+  theme_bw() +
+  labs(title = "Density Plots of Bias Types", x = "Bias Value", y = "Density") +
+  scale_fill_manual(values = c("blue", "red", "green", "purple")) +  # Adjust colors as desired
+  scale_color_manual(values = c("blue", "red", "green", "purple"))  # Same color scheme for the lines
+```
+
+```{r}
+sim_setting_1_results_MSE <- sim_setting_1_results %>%
+  pivot_longer(cols = c(MSE_fixed_MI, MSE_CLQI, MSE_constant, MSE_CC), 
+               names_to = "MSE_type", 
+               values_to = "MSE_value")
+
+# Plot the density of each bias type
+ggplot(sim_setting_1_results_MSE, aes(x = MSE_value, fill = MSE_type)) +
+  geom_density(alpha = 0.25) +  # Adjust transparency with alpha
+  geom_vline(data = sim_setting_1_results_MSE %>%
+               group_by(MSE_type) %>%
+               summarize(mean_MSE = mean(MSE_value)), 
+             aes(xintercept = mean_MSE, color = MSE_type), 
+             linetype = "dashed", size = 1) +
+  theme_bw() +
+  labs(title = "Density Plots of Bias Types", x = "Bias Value", y = "Density") +
+  scale_fill_manual(values = c("blue", "red", "green", "purple")) +  # Adjust colors as desired
+  scale_color_manual(values = c("blue", "red", "green", "purple")) + # Same color scheme for the lines
+  xlim(0,0.5)
+```
+
+```{r}
+sim_setting_1_coverage <- sim_setting_1_results |>
+  summarize(cov_perc_CLQI = sum(coverage_CLQI) / nrow(sim_setting_1_results), 
+            cov_perc_fixed_MI = sum(coverage_fixed_MI) / nrow(sim_setting_1_results), 
+            cov_perc_constant = sum(coverage_constant) / nrow(sim_setting_1_results), 
+            cov_perc_CC = sum(coverage_CC) / nrow(sim_setting_1_results))
+
+sim_setting_1_coverage
+```
+
