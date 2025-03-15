@@ -433,7 +433,6 @@ fixed_MI_results <- fixed_MI(missing_dataset = missing_study,
 mean(fixed_MI_results) - 1.1 #here is our bias!
 ```
 
-
 `CLQI_algorithm` is the function that applies the previous few functions and imputes a unique imputed value to each missing observation. This returns a dataset with one full imputation, ready for checking
 
 ```{r}
@@ -665,13 +664,13 @@ one_iteration <- function(specified_sample_size, specified_tau, specified_LD) {
 ###############################################################################################
   #turning this into a vector: the specific order of our methods will matter
   imputation_results_vector <- data.frame(estimate_CLQI = CLQI_MI_results[1],
-                                          variance_CLQI = CLQI_MI_results[2],
+                                          SE_CLQI = CLQI_MI_results[2],
                                           estimate_fixed_MI = fixed_MI_results[1],
-                                          variance_fixed_MI = fixed_MI_results[2],
+                                          SE_fixed_MI = fixed_MI_results[2],
                                           estimate_constant = constant_imputation_sqrt_2_results[1],
-                                          variance_constant = constant_imputation_sqrt_2_results[2],
+                                          SE_constant = constant_imputation_sqrt_2_results[2],
                                           estimate_CC = complete_case_results[1],
-                                          variance_CC = complete_case_results[2])
+                                          SE_CC = complete_case_results[2])
     
   return(imputation_results_vector)
 }
@@ -705,23 +704,23 @@ repetera_full_simulation <- function(specified_sample_size, specified_tau, speci
   })
   
   #now for coverage: need to calculate based on a condition
-  t_star <- qt(0.975, specified_sample_size - 1)
+  t_star <- qt(0.975, df = specified_sample_size - 1)
   
   
   #after, we will calculate the statistics we desire... STILL HAVE NOT DONE COVERAGE YET
     sim_results_send <- sim_results |>
       mutate(bias_CLQI = estimate_CLQI - b1_true,
-             MSE_CLQI = (bias_CLQI)^2 + variance_CLQI,
-             coverage_CLQI = ifelse(estimate_CLQI - (t_star*sqrt(variance_CLQI)) <= b1_true & b1_true <= estimate_CLQI + (t_star*sqrt(variance_CLQI)), 1, 0),
+             MSE_CLQI = (bias_CLQI)^2 + (SE_CLQI)^2,
+             coverage_CLQI = ifelse(estimate_CLQI - (t_star*SE_CLQI) <= b1_true & b1_true <= estimate_CLQI + (t_star*SE_CLQI), 1, 0),
              bias_fixed_MI = estimate_fixed_MI - b1_true,
-             MSE_fixed_MI = (bias_fixed_MI)^2 + variance_fixed_MI,
-             coverage_fixed_MI = ifelse(estimate_fixed_MI - (t_star*sqrt(variance_fixed_MI)) <= b1_true & b1_true <= estimate_fixed_MI + (t_star*sqrt(variance_fixed_MI)), 1, 0),
+             MSE_fixed_MI = (bias_fixed_MI)^2 + (SE_fixed_MI)^2,
+             coverage_fixed_MI = ifelse(estimate_fixed_MI - (t_star*SE_fixed_MI) <= b1_true & b1_true <= estimate_fixed_MI + (t_star*SE_fixed_MI), 1, 0),
              bias_constant = estimate_constant - b1_true,
-             MSE_constant = (bias_constant)^2 + variance_constant,
-             coverage_constant = ifelse(estimate_constant - (t_star*sqrt(variance_constant)) <= b1_true & b1_true <= estimate_constant + (t_star*sqrt(variance_constant)), 1, 0),
+             MSE_constant = (bias_constant)^2 + (SE_constant)^2,
+             coverage_constant = ifelse(estimate_constant - (t_star*SE_constant) <= b1_true & b1_true <= estimate_constant + (t_star*SE_constant), 1, 0),
              bias_CC = estimate_CC - b1_true,
-             MSE_CC = (bias_CC)^2 + variance_CC,
-             coverage_CC = ifelse(estimate_CC - (t_star*sqrt(variance_CC)) <= b1_true & b1_true <= estimate_CC + (t_star*sqrt(variance_CC)), 1, 0)
+             MSE_CC = (bias_CC)^2 + (SE_CC)^2,
+             coverage_CC = ifelse(estimate_CC - (t_star*SE_CC) <= b1_true & b1_true <= estimate_CC + (t_star*SE_CC), 1, 0)
              ) 
   
   return(sim_results_send)
@@ -738,8 +737,8 @@ tictoc::tic() #start the timer to check
 sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 500, 
                                                  specified_tau = 0.01, 
                                                  specified_LD = 0.30, #30% missing data
-                                                 sim_size = 2,
-                                                 b1_true = exp(log(1.1)))
+                                                 sim_size = 20,
+                                                 b1_true = log(1.1))
 
 tictoc::toc() # Finish the computation time
 ```
