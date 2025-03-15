@@ -413,7 +413,7 @@ fixed_MI <- function(num_iterations = 10, missing_dataset,
 ```{r, eval=FALSE}
 #test case 2
 jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
-                                       LD = 0, #placeholder
+                                       LD = 0.30,
                                        tau = 0.01)
 
 #our studies!
@@ -430,7 +430,7 @@ fixed_MI_results <- fixed_MI(missing_dataset = missing_study,
                              basis_coefficients = basis_regression_coefficents,
                              specified_max = prop)
 
-mean(fixed_MI_results) - 1.1 #here is our bias!
+fixed_MI_results
 ```
 
 `CLQI_algorithm` is the function that applies the previous few functions and imputes a unique imputed value to each missing observation. This returns a dataset with one full imputation, ready for checking
@@ -499,8 +499,26 @@ CLQI_MI <- function(num_iterations = 10, missing_dataset,
 
 ```{r, eval=FALSE}
 #test case!
-```
+jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+                                             LD = 0.30,
+                                             tau = 0.01)
 
+#our studies!
+basis_study <- as.data.frame(jokes_are_funny[[1]])
+missing_study <- as.data.frame(jokes_are_funny[[2]])
+the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
+
+#create basis coefficients
+basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
+prop <- find_prop_missing(missing_study, "confounder_1_missing")
+
+
+CLQI_MI_results <- CLQI_MI(missing_dataset = missing_study,
+                             basis_coefficients = basis_regression_coefficents,
+                             specified_max = prop)
+
+exp(mean(CLQI_MI_results$coefficients)) #rubin's rules and odds ratios
+```
 
 `constant_imputation` applies constant imputation to all missing values for *confounder_1_missing* and presents the b1 coefficient as a result
 
@@ -525,7 +543,7 @@ constant_imputation <- function(missing_dataset, var_for_imputation, LD) {
 ```{r, eval=FALSE}
 #test case
 jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
-                                       LD = 0, #placeholder
+                                       LD = 0.30, #placeholder
                                        tau = 0.01)
 
 constant_imp_test <- constant_imputation(missing_dataset = as.data.frame(jokes_are_funny[2]), 
@@ -555,7 +573,7 @@ complete_case_analysis <- function(missing_dataset, var_for_imputation) {
 ```{r, eval=FALSE}
 #another test case
 jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
-                                             LD = 0, #placeholder
+                                             LD = 0.30, #placeholder
                                              tau = 0.01)
 
 complete_case_test <- complete_case_analysis(missing_dataset = as.data.frame(jokes_are_funny[2]))
@@ -571,7 +589,8 @@ rubin_rules <- function(estimate_and_variance) {
   coefficient_MI <- mean(estimate_and_variance$coefficients)
   
   #the variance result
-  SE_MI <- mean(estimate_and_variance$SE)
+  variance_MI <- mean((estimate_and_variance$SE)^2)
+  SE_MI <- sqrt(variance_MI)
   
   #return a vector, where [1] is the estimate and [2] is the variance
   my_vector <- c(coefficient_MI, SE_MI)
@@ -735,9 +754,9 @@ This purrr loop (like a for loop but more efficient for R) just runs the `one_it
 tictoc::tic() #start the timer to check
 
 sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 500, 
-                                                 specified_tau = 0.01, 
-                                                 specified_LD = 0.30, #30% missing data
-                                                 sim_size = 20,
+                                                 specified_tau = 0, 
+                                                 specified_LD = 0.50, #30% missing data
+                                                 sim_size = 1000,
                                                  b1_true = log(1.1))
 
 tictoc::toc() # Finish the computation time
@@ -752,10 +771,13 @@ saveRDS(sim_setting_1_results, file="./simulation_results/sim_setting_1.rds")
 ```{r}
 sim_setting_1_results <- readRDS(file="./simulation_results/sim_setting_1.rds")
 
-ggplot(data=sim_setting_1_results, aes(x=bias_fixed_MI)) +
+ggplot(data=sim_setting_1_results, aes(x=bias_CLQI)) +
   geom_density() +
   geom_vline(aes(xintercept = mean(bias_CLQI)), color = "red", linetype = "dashed", size = 1) +
   theme_bw()
+
+#the bias... hmm
+mean(sim_setting_1_results$bias_CLQI)
 ```
 
 ```{r}
@@ -811,34 +833,4 @@ sim_setting_1_coverage <- sim_setting_1_results |>
 sim_setting_1_coverage
 ```
 
-
 *************************************************************************************************************
-
-Other tests
-
-```{r}
-tictoc::tic() #start the timer to check
-
-sim_setting_test_results <- repetera_full_simulation(specified_sample_size = 500, 
-                                                 specified_tau = 0.01, 
-                                                 specified_LD = 0.95, #95% missing data
-                                                 sim_size = 1000,
-                                                 b1_true = exp(log(1.1)))
-
-tictoc::toc() # Finish the computation time
-```
-
-```{r}
-#save the results and look at them!
-saveRDS(sim_setting_test_results, file="./simulation_results/sim_setting_test.rds")
-```
-
-```{r}
-sim_setting_test_coverage <- sim_setting_test_results |>
-  summarize(cov_perc_CLQI = sum(coverage_CLQI) / nrow(sim_setting_1_results), 
-            cov_perc_fixed_MI = sum(coverage_fixed_MI) / nrow(sim_setting_1_results), 
-            cov_perc_constant = sum(coverage_constant) / nrow(sim_setting_1_results), 
-            cov_perc_CC = sum(coverage_CC) / nrow(sim_setting_1_results))
-
-sim_setting_test_coverage
-```
