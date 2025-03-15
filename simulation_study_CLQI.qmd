@@ -374,13 +374,12 @@ fixed_MI <- function(num_iterations = 10, missing_dataset,
                     specified_max) {
   
   b1_coefficients <- numeric(num_iterations)
-  b1_variance <- numeric(num_iterations)
+  b1_SE <- numeric(num_iterations)
   
   for(i in 1:num_iterations) {
   
     #generate ONE uniform value
     my_uniform_values <- uniform_values(specified_max = specified_max)
-    
     
     fixed_MI_dataset <- missing_dataset |>
       mutate(confounder_1_fixed_MI = ifelse(is.na(confounder_1_missing), 
@@ -399,15 +398,15 @@ fixed_MI <- function(num_iterations = 10, missing_dataset,
       
 
     #store the b1 parameter in a vector
-    b1_coefficients[i] <- exp(log_reg_result$coefficients[2])
-    b1_variance[i] <- (summary(log_reg_result)$coefficients[2,2])^2
+    b1_coefficients[i] <- log_reg_result$coefficients[2]
+    b1_SE[i] <- summary(log_reg_result)$coefficients[2,2]
   }
   
   #now put the parameter estimates and their associated variances in a dataframe and return that for each MI iteration
-  coefficients_and_variance <- data.frame(coefficients = b1_coefficients,
-                                          variance = b1_variance)
+  coefficients_and_SE <- data.frame(coefficients = b1_coefficients,
+                                    SE = b1_SE)
   
-  return(coefficients_and_variance)
+  return(coefficients_and_SE)
 }
 ```
 
@@ -475,7 +474,7 @@ CLQI_MI <- function(num_iterations = 10, missing_dataset,
                     specified_max) {
   
   b1_coefficients <- numeric(num_iterations) #initialize vector
-  b1_variance <- numeric(num_iterations) #initialize vector
+  b1_SE <- numeric(num_iterations) #initialize vector
   
   for(i in 1:num_iterations) {
     #run the algorithm
@@ -487,17 +486,16 @@ CLQI_MI <- function(num_iterations = 10, missing_dataset,
                           family = "binomial")
       
     #extract exposure coefficients (b1)
-    b1_coefficients[i] <- exp(log_reg_result$coefficients[2])
-    b1_variance[i] <- summary(log_reg_result)$coefficients[2,2]^2
+    b1_coefficients[i] <- log_reg_result$coefficients[2]
+    b1_SE[i] <- summary(log_reg_result)$coefficients[2,2]
   }
   
   #now make a dataframe for the coefficients and variance for each MI iteration
-  coefficients_and_variance <- data.frame(coefficients = b1_coefficients,
-                                          variance = b1_variance)
+  coefficients_and_SE <- data.frame(coefficients = b1_coefficients,
+                                          SE = b1_SE)
   
-  return(coefficients_and_variance)
+  return(coefficients_and_SE)
 }
-  
 ```
 
 ```{r, eval=FALSE}
@@ -519,7 +517,7 @@ constant_imputation <- function(missing_dataset, var_for_imputation, LD) {
                           data = missing_dataset_constanted, 
                           family = "binomial")
   
-  constant_imp_result <- c(exp(log_reg_result$coefficients[2]), summary(log_reg_result)$coefficients[2,2]^2)
+  constant_imp_result <- c(log_reg_result$coefficients[2], summary(log_reg_result)$coefficients[2,2])
   
   return(constant_imp_result) #for the exposure variable
 }
@@ -549,7 +547,7 @@ complete_case_analysis <- function(missing_dataset, var_for_imputation) {
                           data = CC_missing_dataset, 
                           family = "binomial")
   
-  CC_results <- c(exp(log_reg_result$coefficients[2]), summary(log_reg_result)$coefficients[2,2]^2)
+  CC_results <- c(log_reg_result$coefficients[2], summary(log_reg_result)$coefficients[2,2])
   
   return(CC_results) #for the exposure variable
 }
@@ -574,10 +572,10 @@ rubin_rules <- function(estimate_and_variance) {
   coefficient_MI <- mean(estimate_and_variance$coefficients)
   
   #the variance result
-  variance_MI <- mean(estimate_and_variance$variance)
+  SE_MI <- mean(estimate_and_variance$SE)
   
   #return a vector, where [1] is the estimate and [2] is the variance
-  my_vector <- c(coefficient_MI, variance_MI)
+  my_vector <- c(coefficient_MI, SE_MI)
   return(my_vector)
 }
 ```
@@ -740,7 +738,7 @@ tictoc::tic() #start the timer to check
 sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 500, 
                                                  specified_tau = 0.01, 
                                                  specified_LD = 0.30, #30% missing data
-                                                 sim_size = 1000,
+                                                 sim_size = 2,
                                                  b1_true = exp(log(1.1)))
 
 tictoc::toc() # Finish the computation time
