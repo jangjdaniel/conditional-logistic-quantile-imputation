@@ -95,8 +95,16 @@ coefficient_generator <- function(tau, num_studies,
   
   #lastly, we need a range of degrees of freedom for the confounder generation
   #there will be two just in case I want to use an F distribution
-  deg_freedom <- data.frame(df_1 = round(runif(num_studies, min = 3, max = 7)),
+  if(tau == 0) { #common 
+    deg_freedom <- data.frame(df_1 = round(runif(num_studies, min = 5, max = 5)), #don't touch it if it aint broke
+                            df_2 = round(runif(num_studies, min = 5, max = 5)))
+    
+  } else { #heterogenous
+    deg_freedom <- data.frame(df_1 = round(runif(num_studies, min = 3, max = 7)),
                             df_2 = round(runif(num_studies, min = 3, max = 7)))
+  }
+      
+  
   
   #now combine these results
   coefficients <- cbind(study_counts, alpha_coefficients, beta_coefficients, deg_freedom)
@@ -117,7 +125,7 @@ create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3, df_1, df_2) {
   #step 1: Base Binary Predictor
   V <- rbinom(n, size = 1, prob = 0.4)
   
-  #step 2: cnfounder with a skewed distribution... Biomarker missing
+  #step 2: confounder with a skewed distribution... Biomarker missing
   C1 <- rchisq(n, df = df_1) 
   #C2 <- rnorm(n, mean = 75, sd = 7) #another confounder with a normal distribution. not used right now
   
@@ -229,6 +237,31 @@ data_generating_mechanism <- function(sample_size, LD, tau) {
   return(my_studies) #return list of studies with missingness added
 }
 ```
+
+Now we should make sure that the data generating mechanism works as promised: we will generate data and do logistic regression after extracting true coefficients to ensure everything looks right.
+
+```{r, eval=FALSE}
+test_data <- data_generating_mechanism(sample_size = 500, 
+                                       LD = 0.30, 
+                                       tau = 0)
+
+one <- test_data[[1]]
+two <- test_data[[2]]
+
+one_log <- glm(outcome ~ exposure + predictor + confounder_1, 
+               data = one, 
+               family = "binomial")
+
+summary(one_log)
+
+two_log <- glm(outcome ~ exposure + predictor + confounder_1, 
+               data = two, 
+               family = "binomial")
+
+summary(two_log)
+```
+
+
 
 
 **************************************************************************************
@@ -725,7 +758,6 @@ repetera_full_simulation <- function(specified_sample_size, specified_tau, speci
   #now for coverage: need to calculate based on a condition
   t_star <- qt(0.975, df = specified_sample_size - 1)
   
-  
   #after, we will calculate the statistics we desire... STILL HAVE NOT DONE COVERAGE YET
     sim_results_send <- sim_results |>
       mutate(bias_CLQI = estimate_CLQI - b1_true,
@@ -757,7 +789,7 @@ sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 500,
                                                  specified_tau = 0, 
                                                  specified_LD = 0.50, #30% missing data
                                                  sim_size = 1000,
-                                                 b1_true = log(1.1))
+                                                 b1_true = log(1.1)) #NOT SURE
 
 tictoc::toc() # Finish the computation time
 ```
@@ -766,7 +798,6 @@ tictoc::toc() # Finish the computation time
 #save the results and look at them!
 saveRDS(sim_setting_1_results, file="./simulation_results/sim_setting_1.rds")
 ```
-
 
 ```{r}
 sim_setting_1_results <- readRDS(file="./simulation_results/sim_setting_1.rds")
@@ -789,8 +820,8 @@ sim_setting_1_results_bias <- sim_setting_1_results |>
 # Plot the density of each bias type with separate graphs
 ggplot(sim_setting_1_results_bias, aes(x = bias_value, fill = bias_type)) +
   geom_density(alpha = 0.25) +  # Adjust transparency with alpha
-  geom_vline(data = sim_setting_1_results_bias %>%
-               group_by(bias_type) %>%
+  geom_vline(data = sim_setting_1_results_bias,
+               group_by(bias_type) |>
                summarize(mean_bias = mean(bias_value)), 
              aes(xintercept = mean_bias, color = bias_type), 
              linetype = "dashed", size = 1) +
@@ -810,8 +841,8 @@ sim_setting_1_results_MSE <- sim_setting_1_results |>
 # Plot the density of each bias type
 ggplot(sim_setting_1_results_MSE, aes(x = MSE_value, fill = MSE_type)) +
   geom_density(alpha = 0.25) +  # Adjust transparency with alpha
-  geom_vline(data = sim_setting_1_results_MSE %>%
-               group_by(MSE_type) %>%
+  geom_vline(data = sim_setting_1_results_MSE |>
+               group_by(MSE_type) |>
                summarize(mean_MSE = mean(MSE_value)), 
              aes(xintercept = mean_MSE, color = MSE_type), 
              linetype = "dashed", size = 1) +
