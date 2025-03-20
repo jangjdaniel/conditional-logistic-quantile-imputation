@@ -26,8 +26,8 @@ logit <- function(prob) {
   return(value)
 }
 
-expit <- function(prob) {
-  value <- 1 / (1 + exp(-(prob)))
+expit <- function(x) {
+  value <- 1 / (1 + exp(-x))
   return(value)
 }
 
@@ -104,8 +104,6 @@ coefficient_generator <- function(tau, num_studies,
                             df_2 = round(runif(num_studies, min = 3, max = 7)))
   }
       
-  
-  
   #now combine these results
   coefficients <- cbind(study_counts, alpha_coefficients, beta_coefficients, deg_freedom)
   
@@ -130,11 +128,11 @@ create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3, df_1, df_2) {
   #C2 <- rnorm(n, mean = 75, sd = 7) #another confounder with a normal distribution. not used right now
   
   #step 3: generating exposure variable based on confounders (probability)
-  E <- expit(a_0 + a_1*C1)
+  E <- plogis(a_0 + a_1*C1)
   E_bin <- rbinom(n, size = 1, prob = E)
   
   #step 4: generating outcome based on confounders, exposure, and base binary predictor
-  O <- expit(b_0 + b_1*E + b_2*V + b_3*C1)
+  O <- plogis(b_0 + b_1*E + b_2*V + b_3*C1)
   O_bin <- rbinom(n, size = 1, prob = O)
   
   #step 5: create dataset
@@ -241,24 +239,50 @@ data_generating_mechanism <- function(sample_size, LD, tau) {
 Now we should make sure that the data generating mechanism works as promised: we will generate data and do logistic regression after extracting true coefficients to ensure everything looks right.
 
 ```{r, eval=FALSE}
+#confirm that my coefficients are working right (correct)
 test_data <- data_generating_mechanism(sample_size = 500, 
-                                       LD = 0.30, 
+                                       LD = 0.60, 
                                        tau = 0)
 
-one <- test_data[[1]]
-two <- test_data[[2]]
+test_data[[3]]
 
-one_log <- glm(outcome ~ exposure + predictor + confounder_1, 
+#initialize
+one_vect <- c()
+two_vect <- c()
+CC_vect <- c()
+
+for(j in 1:1000) {
+  test_data <- data_generating_mechanism(sample_size = 500, 
+                                       LD = 0.60, 
+                                       tau = 0)
+ 
+  one <- test_data[[1]]
+  two <- test_data[[2]] 
+  
+  one_log <- glm(outcome ~ exposure + predictor + confounder_1, 
                data = one, 
                family = "binomial")
 
-summary(one_log)
-
-two_log <- glm(outcome ~ exposure + predictor + confounder_1, 
+  two_log <- glm(outcome ~ exposure + predictor + confounder_1, 
                data = two, 
                family = "binomial")
+  
+  one_vect[j] <- summary(one_log)$coefficients[2]
+  two_vect[j] <- summary(two_log)$coefficients[2]
+  
+  
+  twomiss_log <- glm(outcome ~ exposure + predictor + confounder_1_missing, 
+               data = two, 
+               family = "binomial")
+  
+  CC_vect <- summary(twomiss_log)$coefficients[2]
+}
 
-summary(two_log)
+
+#not good... this should be centered around 0.405 aka ln(1.5)
+hist(one_vect)
+hist(two_vect)
+hist(CC_vect)
 ```
 
 
