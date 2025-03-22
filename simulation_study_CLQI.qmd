@@ -115,7 +115,10 @@ coefficient_generator <- function(tau, num_studies,
 
 ```{r}
 #this will be nested to make the list function cleaner to read
-create_data <- function(sample_size, a_0, a_1, b_0, b_1, b_2, b_3, df_1, df_2) {
+create_data <- function(sample_size,
+                        a_0 = logit(0.3), a_1 = log(1.1), 
+                        b_0 = logit(0.1), b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2),
+                        df_1, df_2) {
   
   #initialize everything
   n <- sample_size
@@ -246,13 +249,21 @@ test_data <- data_generating_mechanism(sample_size = 500,
 
 test_data[[3]]
 
+missing_log <- glm(outcome ~ exposure + predictor + confounder_1, 
+                     data = as.data.frame(test_data[[2]]), 
+                     family = "binomial")
+
+summary(missing_log)
+
 #initialize
 one_vect <- c()
+
+
 two_vect <- c()
 CC_vect <- c()
 
 for(j in 1:1000) {
-  test_data <- data_generating_mechanism(sample_size = 500, 
+  test_data <- data_generating_mechanism(sample_size = 5000, 
                                        LD = 0.60, 
                                        tau = 0)
  
@@ -269,13 +280,13 @@ for(j in 1:1000) {
   
   one_vect[j] <- summary(one_log)$coefficients[2]
   two_vect[j] <- summary(two_log)$coefficients[2]
-  
+
   
   twomiss_log <- glm(outcome ~ exposure + predictor + confounder_1_missing, 
-               data = two, 
-               family = "binomial")
+                     data = two, 
+                     family = "binomial")
   
-  CC_vect <- summary(twomiss_log)$coefficients[2]
+  CC_vect[j] <- summary(twomiss_log)$coefficients[2]
 }
 
 
@@ -356,10 +367,10 @@ imputation_algorithm <- function(basis_coefficients, study_for_imputation,
   ceiling_quantile <- basis_coefficients[u_vector[4], ] #ceiling
   
   #need to calculate regression values... really messy don't look at this
-  lower_quantile_value <- floor_quantile$b0 + (floor_quantile$b_predictor * study_for_imputation[row_index,]$predictor) +
+  lower_quantile_value <- floor_quantile$b0 +
     (floor_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (floor_quantile$b_outcome * study_for_imputation[row_index,]$outcome)
 
-  upper_quantile_value <- ceiling_quantile$b0 + (ceiling_quantile$b_predictor * study_for_imputation[row_index,]$predictor) +
+  upper_quantile_value <- ceiling_quantile$b0 +
     (ceiling_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (ceiling_quantile$b_outcome * study_for_imputation[row_index,]$outcome)
 
   modulus <- u_vector[3]
@@ -522,6 +533,35 @@ CLQI_algorithm <- function(missing_dataset, basis_coefficients, specified_max) {
 }
 ```
 
+```{r, eval=FALSE}
+#test case
+jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+                                             LD = 0.50,
+                                             tau = 0)
+
+#our studies!
+basis_study <- as.data.frame(jokes_are_funny[[1]])
+missing_study <- as.data.frame(jokes_are_funny[[2]])
+the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
+
+#create basis coefficients
+basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
+my_prop <- find_prop_missing(missing_study, "confounder_1_missing")
+
+
+CLQI_MI_one_iter <- CLQI_algorithm(missing_dataset = missing_study,
+                                   basis_coefficients = basis_regression_coefficents,
+                                   specified_max = my_prop)
+
+ggplot() + 
+  geom_histogram(data = CLQI_MI_one_iter, aes(x = confounder_1_CLQI), bins = 30, alpha = 0.5, fill = "blue") + 
+  geom_histogram(data = CLQI_MI_one_iter, aes(x = confounder_1), bins = 30, alpha = 0.5, fill = "red") + 
+  theme_minimal() +
+  labs(title = "Overlayed Histograms", x = "Value", y = "Frequency")
+```
+
+
+
 `CLQI_MI` applies the CLQI algorithm to the missing_dataset 10 times and combines the results according to rubin's rules
 
 ```{r}
@@ -558,7 +598,7 @@ CLQI_MI <- function(num_iterations = 10, missing_dataset,
 #test case!
 jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
                                              LD = 0.30,
-                                             tau = 0.01)
+                                             tau = 0)
 
 #our studies!
 basis_study <- as.data.frame(jokes_are_funny[[1]])
