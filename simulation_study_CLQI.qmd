@@ -687,9 +687,11 @@ rubin_rules <- function(estimate_and_variance) {
   #the parameter result
   coefficient_MI <- mean(estimate_and_variance$coefficients)
   
-  #the variance result
-  variance_MI <- mean((estimate_and_variance$SE)^2)
-  SE_MI <- sqrt(variance_MI)
+  #the SE result: google rubin's rules it's quite standard
+  variance_within_MI <- mean((estimate_and_variance$SE)^2)
+  variance_between_MI <- sum((estimate_and_variance$coefficients - coefficient_MI)^2) / (length(estimate_and_variance$coefficients) - 1)
+  total_variance <- variance_within_MI + variance_between_MI + (variance_between_MI / length(estimate_and_variance$coefficients))
+  SE_MI <- sqrt(total_variance)
   
   #return a vector, where [1] is the estimate and [2] is the variance
   my_vector <- c(coefficient_MI, SE_MI)
@@ -697,6 +699,14 @@ rubin_rules <- function(estimate_and_variance) {
 }
 ```
 
+```{r, eval=FALSE}
+#test case
+#now with an estimate_and_variance... we will do manaul calculations to show everything is correct here
+my_estimates <- data.frame(coefficients = c(1.1, 1.2, 1.11, 1.04, 1.6),
+                           SE = c(0.04, 0.5, 0.22, 0.84, 0.11))
+
+rubin_rules(my_estimates)
+```
 
 **************************************************************************************
 
