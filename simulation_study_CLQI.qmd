@@ -853,9 +853,9 @@ tictoc::tic() #start the timer to check
 
 sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 500, 
                                                  specified_tau = 0, 
-                                                 specified_LD = 0.50, #30% missing data
+                                                 specified_LD = 0.50, #50% missing data
                                                  sim_size = 1000,
-                                                 b1_true = log(1.1)) #NOT SURE
+                                                 b1_true = log(1.5))
 
 tictoc::toc() # Finish the computation time
 ```
@@ -883,12 +883,15 @@ sim_setting_1_results_bias <- sim_setting_1_results |>
                names_to = "bias_type", 
                values_to = "bias_value")
 
+# Compute the means of bias_value for each bias_type
+mean_bias_values <- sim_setting_1_results_bias |>
+  group_by(bias_type) |>
+  summarize(mean_bias = mean(bias_value))
+
 # Plot the density of each bias type with separate graphs
 ggplot(sim_setting_1_results_bias, aes(x = bias_value, fill = bias_type)) +
   geom_density(alpha = 0.25) +  # Adjust transparency with alpha
-  geom_vline(data = sim_setting_1_results_bias,
-               group_by(bias_type) |>
-               summarize(mean_bias = mean(bias_value)), 
+  geom_vline(data = mean_bias_values,
              aes(xintercept = mean_bias, color = bias_type), 
              linetype = "dashed", size = 1) +
   theme_bw() +
