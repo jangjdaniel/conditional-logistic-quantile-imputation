@@ -132,10 +132,10 @@ create_data <- function(sample_size,
   
   #step 3: generating exposure variable based on confounders (probability)
   E <- plogis(a_0 + a_1*C1)
-  E_bin <- rbinom(n, size = 1, prob = E)
+  E_bin <- rbinom(n, size = 1, prob = E) #USE THIS IN NEXT REGRESSION!!
   
   #step 4: generating outcome based on confounders, exposure, and base binary predictor
-  O <- plogis(b_0 + b_1*E + b_2*V + b_3*C1)
+  O <- plogis(b_0 + b_1*E_bin + b_2*V + b_3*C1)
   O_bin <- rbinom(n, size = 1, prob = O)
   
   #step 5: create dataset
@@ -263,9 +263,9 @@ two_vect <- c()
 CC_vect <- c()
 
 for(j in 1:1000) {
-  test_data <- data_generating_mechanism(sample_size = 5000, 
-                                       LD = 0.60, 
-                                       tau = 0)
+  test_data <- data_generating_mechanism(sample_size = 500, 
+                                         LD = 0.60, 
+                                         tau = 0)
  
   one <- test_data[[1]]
   two <- test_data[[2]] 
@@ -289,15 +289,17 @@ for(j in 1:1000) {
   CC_vect[j] <- summary(twomiss_log)$coefficients[2]
 }
 
-
-#not good... this should be centered around 0.405 aka ln(1.5)
+#these histograms should be centered around 0.405 aka ln(1.5)
 hist(one_vect)
 hist(two_vect)
 hist(CC_vect)
+
+mean(two_vect) - log(1.5)
+mean(CC_vect) - log(1.5)
+
+var(two_vect)
+var(CC_vect)
 ```
-
-
-
 
 **************************************************************************************
 
