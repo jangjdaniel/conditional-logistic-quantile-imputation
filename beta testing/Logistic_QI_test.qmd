@@ -44,7 +44,9 @@ Generating our data
 test_data <- data.frame(
   original_data = rf(1000, 6, 4)) #can change to any other distribution: try F and gamma?
 
-ggplot(data=test_data, aes(x=original_data)) + geom_density() + geom_vline(xintercept = left_limit)
+ggplot(data=test_data, aes(x=original_data)) + 
+  geom_density() + 
+  geom_vline(xintercept = left_limit)
 
 test_data <- test_data |>
   mutate(limited_data = ifelse(original_data > left_limit, original_data, NA)) #systematically missing

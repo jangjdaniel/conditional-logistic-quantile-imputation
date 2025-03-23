@@ -1,0 +1,501 @@
+
+Right now we need to test why the CLQI algorithm doesn't work the way I expect it to
+
+```{r}
+#necessary libraries
+library(tidyverse)
+library(ggplot2)
+library(quantreg)
+library(MASS)
+library(purrr)
+library(tictoc)
+```
+
+```{r}
+#logit and expit functions for myself
+logit <- function(prob) {
+  value <- log(prob / (1 - prob))
+  return(value)
+}
+
+expit <- function(x) {
+  value <- 1 / (1 + exp(-x))
+  return(value)
+}
+
+#now some other transformation functions
+log_quant_transform <- function(value, min, max) {
+  new_value <- log((value - min) / (max - value))
+  
+  if (is.nan(new_value)) {return(NA)} #negative log values return an NA. Will be important to address
+  else {return(new_value)}
+}
+
+inv_log_quant_transform <- function(value, min, max) {
+  new_value <- (exp(value)*max + min) / (1+exp(value))
+  return(new_value)
+}
+```
+
+Below are data generating functions that we know work. For the sake of the CLQI test, we will forgo any description
+
+```{r}
+coefficient_generator <- function(tau, num_studies, 
+                                  a_0 = logit(0.3), a_1 = log(1.1), 
+                                  b_0 = logit(0.1), b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2)) {
+    
+  #create which number study we have
+  study_counts <- data.frame(id = 1:num_studies)
+  
+  study_counts <- study_counts |>
+    mutate(study_num = paste("Study", id)) |>
+    dplyr::select(study_num)
+  
+  #allow a_1 to vary
+  alpha_coefficients <- rnorm(num_studies, a_1, tau)
+  alpha_coefficients <- as.data.frame(alpha_coefficients) #make into data frame
+  
+      #renaming for better binding experience + adding a_0... not important here
+      alpha_coefficients <- alpha_coefficients |> 
+        mutate(a_0 = a_0) |>
+        rename(a_1 = "alpha_coefficients") |>
+        dplyr::select(a_0, a_1) #reordering
+  
+      
+  #now doing the beta coefficients
+  beta_vector <- c(b_1, b_2, b_3)
+  
+    #variance-covariance matrix
+    matrix_size <- length(beta_vector)
+    diag_mat <- matrix(0, matrix_size, matrix_size) 
+    diag(diag_mat) <- 1 #make all the diagonals 1 for the identity matrix
+    
+    #lastly, we need to perform the calculation specified in section 3.1.4
+    beta_matrix <- tau * diag_mat
+    beta_coefficients <- mvrnorm(num_studies, beta_vector, beta_matrix)
+    beta_coefficients <- as.data.frame(beta_coefficients)
+    
+      #renaming for better binding experience
+      beta_coefficients <- beta_coefficients |> 
+        mutate(b_0 = b_0) |>
+        rename(b_1 = "V1", b_2 = "V2", b_3 = "V3") |>
+        dplyr::select(b_0, b_1, b_2, b_3)
+  
+  #lastly, we need a range of degrees of freedom for the confounder generation
+  #there will be two just in case I want to use an F distribution
+  if(tau == 0) { #common 
+    deg_freedom <- data.frame(df_1 = round(runif(num_studies, min = 5, max = 5)), #don't touch it if it aint broke
+                            df_2 = round(runif(num_studies, min = 5, max = 5)))
+    
+  } else { #heterogenous
+    deg_freedom <- data.frame(df_1 = round(runif(num_studies, min = 3, max = 7)),
+                            df_2 = round(runif(num_studies, min = 3, max = 7)))
+  }
+      
+  #now combine these results
+  coefficients <- cbind(study_counts, alpha_coefficients, beta_coefficients, deg_freedom)
+  
+  return(coefficients)
+}
+```
+
+```{r}
+#this will be nested to make the list function cleaner to read
+create_data <- function(sample_size,
+                        a_0 = logit(0.3), a_1 = log(1.1), 
+                        b_0 = logit(0.1), b_1 = log(1.5), b_2 = log(0.7), b_3 = log(1.2),
+                        df_1, df_2) {
+  
+  #initialize everything
+  n <- sample_size
+  
+  #step 1: Base Binary Predictor
+  V <- rbinom(n, size = 1, prob = 0.4)
+  
+  #step 2: confounder with a skewed distribution... Biomarker missing
+  C1 <- rchisq(n, df = df_1) 
+  #C2 <- rnorm(n, mean = 75, sd = 7) #another confounder with a normal distribution. not used right now
+  
+  #step 3: generating exposure variable based on confounders (probability)
+  E <- plogis(a_0 + a_1*C1)
+  E_bin <- rbinom(n, size = 1, prob = E) #USE THIS IN NEXT REGRESSION!!
+  
+  #step 4: generating outcome based on confounders, exposure, and base binary predictor
+  O <- plogis(b_0 + b_1*E_bin + b_2*V + b_3*C1)
+  O_bin <- rbinom(n, size = 1, prob = O)
+  
+  #step 5: create dataset
+  
+  my_data <- data.frame(
+    predictor = V,
+    confounder_1 = C1,
+    exposure = E_bin,
+    outcome = O_bin
+  )
+  
+  return(my_data)
+} 
+```
+
+```{r}
+#recall all coefficients are stored in coefficient_generator funct
+create_multiple_datasets <- function(study_coefficient_dataset, sample_size) {
+  my_list <- list() #initialize empty list
+  
+  #pulling all values we need
+  a_0_values <- study_coefficient_dataset |> dplyr::pull(a_0)
+  a_1_values <- study_coefficient_dataset |> dplyr::pull(a_1)
+  b_0_values <- study_coefficient_dataset |> dplyr::pull(b_0)
+  b_1_values <- study_coefficient_dataset |> dplyr::pull(b_1)
+  b_2_values <- study_coefficient_dataset |> dplyr::pull(b_2)
+  b_3_values <- study_coefficient_dataset |> dplyr::pull(b_3)
+  
+  #also degrees of freedom
+  df_1_values <- study_coefficient_dataset |> dplyr::pull(df_1)
+  df_2_values <- study_coefficient_dataset |> dplyr::pull(df_2)
+  
+  for(i in 1:nrow(study_coefficient_dataset)) {
+    #do the data generating mechanism
+    a_0 <- a_0_values[i]
+    a_1 <- a_1_values[i]
+    b_0 <- b_0_values[i]
+    b_1 <- b_1_values[i]
+    b_2 <- b_2_values[i]
+    b_3 <- b_3_values[i]
+    
+    #also the degrees of freedom
+    df_1 <- df_1_values[i]
+    df_2 <- df_2_values[i]
+    
+    #apply the data generating mechanism function from the values above
+    my_data <- create_data(sample_size = sample_size, 
+                           a_0 = a_0, 
+                           a_1 = a_1, 
+                           b_0 = b_0, 
+                           b_1 = b_1, 
+                           b_2 = b_2, 
+                           b_3 = b_3,
+                           df_1 = df_1,
+                           df_2 = df_2)
+    
+    
+    #finally, add this dataset to our list
+    my_list[[i]] <- my_data
+  
+  }
+  
+  #return the list
+  return(my_list)
+}
+```
+
+```{r}
+data_generating_mechanism <- function(sample_size, LD, tau) {
+  
+  #first, create my studies based on coefficients
+  my_coefficients <- coefficient_generator(tau = tau, num_studies = 2) #2 is consistent here
+  my_studies <- create_multiple_datasets(my_coefficients, sample_size = sample_size)
+  
+  #log transform our data
+  min = 0
+  max = ceiling(quantile(my_studies[[1]]$confounder_1, prob = 0.99))
+  
+  suppressWarnings({ #a lot of warnings... some will be NA i know.
+    my_studies[[1]] <- my_studies[[1]] |>
+      mutate(confounder_1_transformed = sapply(confounder_1, log_quant_transform, min, max))
+  })
+  
+  #define the LD and make data missing based on that
+  biomarker_values <- my_studies[[2]]$confounder_1
+  LoD_value <- as.numeric(quantile(biomarker_values, LD)) #must be given as a decimal
+  
+  #now we made the data missing based on our given LD, and also transform this value
+  my_studies[[2]] <- my_studies[[2]] |>
+    mutate(confounder_1_missing = ifelse(confounder_1 >= LoD_value, confounder_1, NA))
+  
+  #just to be able to look into my_coefficients later
+  my_studies <- list(my_studies[[1]], my_studies[[2]], my_coefficients)
+  return(my_studies) #return list of studies with missingness added
+}
+```
+
+
+**************************************************************************************
+
+Here are some more functions that will be running our algorithm, along with definitions on what exactly they do
+
+`logistic_quantile_regression_coefficients` creates our set of regression coefficients from our *basis study* to send to the *missing study*. It outputs a dataset of the coefficients, ready for quantile regression
+
+```{r}
+logistic_quantile_regression_coefficients <- function(basis_study) {
+ 
+  coefficient_data <- data.frame() #initiliaze empty data frame
+  
+  for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
+    reg_coeff <- rq(confounder_1_transformed ~ exposure + predictor + outcome, data = basis_study, tau=i)
+    
+    new_data <- data.frame(
+      b0 = reg_coeff$coefficients[1],
+      b_exposure = reg_coeff$coefficients[2],
+      b_predictor = reg_coeff$coefficients[3],
+      b_outcome = reg_coeff$coefficients[4],
+      quant = i)
+    
+    coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
+  }
+  return(coefficient_data)
+}
+```
+
+`find_prop_missing` finds the proportion of LD data for the missing study. This will end up being useful. It will report a whole number
+
+```{r}
+#make this into a function for easy use?
+find_prop_missing <- function(missing_data_study, LD) {
+  prop_missing <- sum(is.na(missing_data_study[[LD]])) / nrow(missing_data_study)
+  prop_missing <- ceiling(prop_missing * 100)
+  
+  return(prop_missing)
+}
+```
+
+`uniform_values` generates a random value from a unif(1,99) distribution, then extracts the floor, ceiling, and modulus for the CLQI algorithm
+
+```{r}
+uniform_values <- function(specified_max) {
+  u <- runif(1, min = 1, max = specified_max) #aka from 0.01 to 0.99
+  
+  #all the values we need from the uniform
+  floor_u <- floor(u)
+  mod_u <- (u - floor(u))
+  next_u <- ceiling(u)
+  
+  #now putting this into a vector
+  my_u <- c(u, floor_u, mod_u, next_u)
+  return(my_u)
+}
+```
+
+
+
+
+
+
+
+```{r}
+summary(missing_study$confounder_1)
+
+as.numeric(quantile(missing_study$confounder_1, 0.99))
+```
+
+
+
+
+`imputation_algorithm` is the function that implements imputation for one missing value
+We can use tidyverse functionality to slightly modify the use of this function, *although that may be computationally inefficient*
+
+```{r}
+imputation_algorithm <- function(basis_coefficients, study_for_imputation, 
+                                 var_for_imputation, row_index, u_vector) {
+  
+  u_vector <- u_vector
+  floor_quantile <- basis_coefficients[u_vector[2], ] #floor
+  ceiling_quantile <- basis_coefficients[u_vector[4], ] #ceiling
+  
+  #need to calculate regression values... really messy don't look at this
+  lower_quantile_value <- floor_quantile$b0 +
+    (floor_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (floor_quantile$b_outcome * study_for_imputation[row_index,]$outcome)
+
+  upper_quantile_value <- ceiling_quantile$b0 +
+    (ceiling_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (ceiling_quantile$b_outcome * study_for_imputation[row_index,]$outcome)
+
+  modulus <- u_vector[3]
+  imputation_value_transformed <- ((1-modulus)*lower_quantile_value) + (modulus*upper_quantile_value)
+  
+  #lastly, untransform this value using the right min and max... organization is a headache
+  min_imp <- 0
+  missing_data_proportion <- find_prop_missing(missing_data_study = study_for_imputation, 
+                                               LD = as.character(var_for_imputation)) / 100
+  
+  #THIS IS THE ISSUE...
+  max_imp <- as.numeric(quantile(study_for_imputation$confounder_1, 0.99))
+  
+  #remember min is 0 and prop_missing gives us the right quantile for calculating max from study_for_imputation
+  imputed_value_regular <- inv_log_quant_transform(value = imputation_value_transformed, 
+                                                   min = min_imp, 
+                                                   max = max_imp)
+  
+  return(imputed_value_regular)
+}
+```
+
+
+
+
+
+
+```{r, eval=FALSE}
+#test case!
+jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+                                       LD = 0, #placeholder
+                                       tau = 0.01)
+
+#our studies!
+basis_study <- as.data.frame(jokes_are_funny[[1]])
+missing_study <- as.data.frame(jokes_are_funny[[2]])
+the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
+
+#create basis coefficients
+basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
+prop <- find_prop_missing(missing_study, "confounder_1_missing")
+
+#generate ONE uniform value
+my_uniform_values <- uniform_values(specified_max = prop)
+
+#now apply the algorithm; recall we need to loop through this 10 times for this to be MI
+missing_study_fixed_MI <- missing_study |>
+  mutate(confounder_1_fixed_MI = ifelse(is.na(confounder_1_missing), 
+                                        imputation_algorithm(basis_coefficients = basis_regression_coefficents, 
+                                                 study_for_imputation = missing_study, 
+                                                 var_for_imputation = "confounder_1_missing",
+                                                 row_index = seq_len(nrow(missing_study)), 
+                                                 u_vector = my_uniform_values), 
+                                        confounder_1_missing))
+
+#this function doesn't automatically do the regression sadly
+
+log_reg_result <- glm(outcome ~ exposure + predictor + confounder_1_fixed_MI, 
+                          data = missing_study_fixed_MI, 
+                          family = "binomial")
+  
+exp(log_reg_result$coefficients[2]) - 1.5 #bias
+
+#variance
+(summary(log_reg_result)$coefficients[2, 2])^2 #the first 2 is for exposure, and the second 2 is for accessing the standard error
+```
+
+The `fixed_MI` function performs the fixed multiple imputation algorithm of the CLQI algorithm (aka instead of a random uniform for every missing value, we choose one uniform value for the entire imputation, then do the imputations 10 times and combine using rubin's rules)
+
+```{r}
+fixed_MI <- function(num_iterations = 10, missing_dataset, 
+                    basis_coefficients, var_for_imputation, #var_for_imputation is no longer used
+                    specified_max) {
+  
+  b1_coefficients <- numeric(num_iterations)
+  b1_SE <- numeric(num_iterations)
+  
+  for(i in 1:num_iterations) {
+  
+    #generate ONE uniform value
+    my_uniform_values <- uniform_values(specified_max = specified_max)
+    
+    fixed_MI_dataset <- missing_dataset |>
+      mutate(confounder_1_fixed_MI = ifelse(is.na(confounder_1_missing), 
+                                            imputation_algorithm(basis_coefficients = basis_coefficients, 
+                                                                 study_for_imputation = missing_dataset, 
+                                                                 var_for_imputation = "confounder_1_missing", 
+                                                                 row_index = seq_len(nrow(missing_dataset)), 
+                                                                 u_vector = my_uniform_values),
+                                            confounder_1_missing)
+             )
+    
+    #then run logistic regression
+    log_reg_result <- glm(outcome ~ exposure + predictor + confounder_1_fixed_MI, 
+                          data = fixed_MI_dataset, 
+                          family = "binomial")
+      
+
+    #store the b1 parameter in a vector
+    b1_coefficients[i] <- log_reg_result$coefficients[2]
+    b1_SE[i] <- summary(log_reg_result)$coefficients[2,2]
+  }
+  
+  #now put the parameter estimates and their associated variances in a dataframe and return that for each MI iteration
+  coefficients_and_SE <- data.frame(coefficients = b1_coefficients,
+                                    SE = b1_SE)
+  
+  return(coefficients_and_SE)
+}
+```
+
+```{r, eval=FALSE}
+#test case 2
+jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+                                       LD = 0.30,
+                                       tau = 0.01)
+
+#our studies!
+basis_study <- as.data.frame(jokes_are_funny[[1]])
+missing_study <- as.data.frame(jokes_are_funny[[2]])
+the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
+
+#create basis coefficients
+basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
+prop <- find_prop_missing(missing_study, "confounder_1_missing")
+
+
+fixed_MI_results <- fixed_MI(missing_dataset = missing_study,
+                             basis_coefficients = basis_regression_coefficents,
+                             specified_max = prop)
+
+fixed_MI_results
+```
+
+`CLQI_algorithm` is the function that applies the previous few functions and imputes a unique imputed value to each missing observation. This returns a dataset with one full imputation, ready for checking
+
+```{r}
+#this is the CLQI algorithm, with some modifications to the u_vector idea
+#for fixed MI, just move where the my_uniform_values gets called, so we use the same uniform value each time
+#sadly this is not efficient, but for readability, and also for me to not go insane, this is what I did
+
+CLQI_algorithm <- function(missing_dataset, basis_coefficients, specified_max) {
+
+  missing_dataset$confounder_1_CLQI <- NA #initialize a new variable here... base R ugh
+  
+  for(row_index in 1:nrow(missing_dataset)) {
+    if(is.na(missing_dataset$confounder_1_missing[row_index])) {
+      my_uniform_values <- uniform_values(specified_max) #generate unique uniform values
+      
+      imputed_value <- imputation_algorithm(basis_coefficients = basis_coefficients, 
+                                study_for_imputation = missing_dataset, 
+                                var_for_imputation = "confounder_1_missing",
+                                row_index = row_index, #to get the right one
+                                u_vector = my_uniform_values)
+      
+      missing_dataset$confounder_1_CLQI[row_index] <- imputed_value
+    }
+    else {
+      missing_dataset$confounder_1_CLQI[row_index] <- missing_dataset$confounder_1_missing[row_index]
+    }
+  }
+  
+  return(missing_dataset)
+}
+```
+
+```{r, eval=FALSE}
+#test case
+jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+                                             LD = 0.50,
+                                             tau = 0)
+
+#our studies!
+basis_study <- as.data.frame(jokes_are_funny[[1]])
+missing_study <- as.data.frame(jokes_are_funny[[2]])
+the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
+
+#create basis coefficients
+basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from sim_data
+my_prop <- find_prop_missing(missing_study, "confounder_1_missing")
+
+
+CLQI_MI_one_iter <- CLQI_algorithm(missing_dataset = missing_study,
+                                   basis_coefficients = basis_regression_coefficents,
+                                   specified_max = my_prop)
+
+ggplot() + 
+  geom_histogram(data = CLQI_MI_one_iter, aes(x = confounder_1_CLQI), bins = 30, alpha = 0.5, fill = "blue") + 
+  geom_histogram(data = CLQI_MI_one_iter, aes(x = confounder_1), bins = 30, alpha = 0.5, fill = "red") + 
+  theme_minimal() +
+  labs(title = "Overlayed Histograms", x = "Value", y = "Frequency")
+```

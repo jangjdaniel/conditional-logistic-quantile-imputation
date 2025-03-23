@@ -380,12 +380,7 @@ imputation_algorithm <- function(basis_coefficients, study_for_imputation,
   
   #lastly, untransform this value using the right min and max... organization is a headache
   min_imp <- 0
-  missing_data_proportion <- find_prop_missing(missing_data_study = study_for_imputation, 
-                                               LD = as.character(var_for_imputation)) / 100
-  
-  #THIS IS THE ISSUE...
-  max_imp <- as.numeric(quantile(study_for_imputation$confounder_1, missing_data_proportion))
-  #then normal distribution to add random error... AHHHHHHH
+  max_imp <- as.numeric(quantile(study_for_imputation$confounder_1, 0.99)) #only go up to the 99th quantile for our data
   
   #remember min is 0 and prop_missing gives us the right quantile for calculating max from study_for_imputation
   imputed_value_regular <- inv_log_quant_transform(value = imputation_value_transformed, 
