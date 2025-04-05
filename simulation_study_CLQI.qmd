@@ -550,11 +550,21 @@ CLQI_MI_one_iter <- CLQI_algorithm(missing_dataset = missing_study,
                                    basis_coefficients = basis_regression_coefficents,
                                    specified_max = my_prop)
 
-ggplot() + 
-  geom_histogram(data = CLQI_MI_one_iter, aes(x = confounder_1_CLQI), bins = 30, alpha = 0.5, fill = "blue") + 
-  geom_histogram(data = CLQI_MI_one_iter, aes(x = confounder_1), bins = 30, alpha = 0.5, fill = "red") + 
-  theme_minimal() +
-  labs(title = "Overlayed Histograms", x = "Value", y = "Frequency")
+#for ggplot uses only: transform the data so I can make the histogram look nice
+
+LD_line <- min(CLQI_MI_one_iter$confounder_1_missing, na.rm = TRUE)
+
+CLQI_MI_one_iter_ggplot <- CLQI_MI_one_iter |>
+  dplyr::select(confounder_1, confounder_1_CLQI) |>
+  pivot_longer(cols = c("confounder_1", "confounder_1_CLQI"),
+               names_to = "confounder",
+               values_to = "value")
+
+
+
+ggplot(data = CLQI_MI_one_iter_ggplot, aes(x = value, group = confounder, color = confounder)) + 
+  geom_density() +
+  geom_vline(xintercept = LD_line)
 ```
 
 
@@ -752,6 +762,13 @@ one_iteration <- function(specified_sample_size, specified_tau, specified_LD) {
   missing_study <- as.data.frame(my_data[[2]])
   the_LD <- min(missing_study$confounder_1_missing, na.rm=TRUE)
   
+  #regular logistic regression with the data just for a diagnostic. may become important
+  regular_reg_result <- glm(outcome ~ exposure + predictor + confounder_1, 
+                            data = missing_study, 
+                            family = "binomial")
+  
+  regular_reg_result <- c(regular_reg_result$coefficients[2], summary(regular_reg_result)$coefficients[2,2])
+  
   #CLQI
     #the basis dataset runs conditional logistic quantile regression
     basis_regression_coefficents <- logistic_quantile_regression_coefficients(basis_study) #created from my_data
@@ -793,7 +810,9 @@ one_iteration <- function(specified_sample_size, specified_tau, specified_LD) {
                                           estimate_constant = constant_imputation_sqrt_2_results[1],
                                           SE_constant = constant_imputation_sqrt_2_results[2],
                                           estimate_CC = complete_case_results[1],
-                                          SE_CC = complete_case_results[2])
+                                          SE_CC = complete_case_results[2],
+                                          estimate_regular = regular_reg_result[1],
+                                          SE_regular = regular_reg_result[2])
     
   return(imputation_results_vector)
 }
@@ -842,9 +861,12 @@ repetera_full_simulation <- function(specified_sample_size, specified_tau, speci
              coverage_constant = ifelse(estimate_constant - (t_star*SE_constant) <= b1_true & b1_true <= estimate_constant + (t_star*SE_constant), 1, 0),
              bias_CC = estimate_CC - b1_true,
              MSE_CC = (bias_CC)^2 + (SE_CC)^2,
-             coverage_CC = ifelse(estimate_CC - (t_star*SE_CC) <= b1_true & b1_true <= estimate_CC + (t_star*SE_CC), 1, 0)
+             coverage_CC = ifelse(estimate_CC - (t_star*SE_CC) <= b1_true & b1_true <= estimate_CC + (t_star*SE_CC), 1, 0),
+             bias_regular = estimate_regular - b1_true,
+             MSE_regular = (bias_regular)^2 + (SE_regular)^2,
+             coverage_regular = ifelse(estimate_regular - (t_star*SE_regular) <= b1_true & b1_true <= estimate_regular + (t_star*SE_regular), 1, 0)
              ) 
-  
+    
   return(sim_results_send)
 }
 ```
@@ -856,7 +878,7 @@ This purrr loop (like a for loop but more efficient for R) just runs the `one_it
 ```{r}
 tictoc::tic() #start the timer to check
 
-sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 500, 
+sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 2500, 
                                                  specified_tau = 0, 
                                                  specified_LD = 0.50, #50% missing data
                                                  sim_size = 1000,
@@ -880,6 +902,24 @@ ggplot(data=sim_setting_1_results, aes(x=bias_CLQI)) +
 
 #the bias... hmm
 mean(sim_setting_1_results$bias_CLQI)
+mean(sim_setting_1_results$bias_fixed_MI)
+mean(sim_setting_1_results$bias_constant)
+mean(sim_setting_1_results$bias_CC)
+mean(sim_setting_1_results$bias_regular)
+
+#the MSE... hmm
+mean(sim_setting_1_results$MSE_CLQI)
+mean(sim_setting_1_results$MSE_fixed_MI)
+mean(sim_setting_1_results$MSE_constant)
+mean(sim_setting_1_results$MSE_CC)
+mean(sim_setting_1_results$MSE_regular)
+
+#and SE just in case
+mean(sim_setting_1_results$SE_CLQI)
+mean(sim_setting_1_results$SE_fixed_MI)
+mean(sim_setting_1_results$SE_constant)
+mean(sim_setting_1_results$SE_CC)
+mean(sim_setting_1_results$SE_regular)
 ```
 
 ```{r}
@@ -933,9 +973,29 @@ sim_setting_1_coverage <- sim_setting_1_results |>
   summarize(cov_perc_CLQI = sum(coverage_CLQI) / nrow(sim_setting_1_results), 
             cov_perc_fixed_MI = sum(coverage_fixed_MI) / nrow(sim_setting_1_results), 
             cov_perc_constant = sum(coverage_constant) / nrow(sim_setting_1_results), 
-            cov_perc_CC = sum(coverage_CC) / nrow(sim_setting_1_results))
+            cov_perc_CC = sum(coverage_CC) / nrow(sim_setting_1_results),
+            cov_perc_regular = sum(coverage_regular) / nrow(sim_setting_1_results))
 
 sim_setting_1_coverage
 ```
+
+This is a strange diagnostic, but trust me on this
+
+```{r}
+sim_setting_1_proof <- sim_setting_1_results |>
+  mutate(difference_CLQI_true = estimate_CLQI - estimate_regular,
+         difference_fixed_MI_true = estimate_fixed_MI - estimate_regular,
+         difference_CC_true = estimate_CC - estimate_regular,
+         difference_constant_true = estimate_constant - estimate_regular) |>
+  dplyr::select(difference_CLQI_true, difference_fixed_MI_true,
+                difference_CC_true, difference_constant_true)
+
+
+hist(sim_setting_1_proof$difference_CLQI_true)
+hist(sim_setting_1_proof$difference_fixed_MI_true)
+hist(sim_setting_1_proof$difference_CC_true)
+hist(sim_setting_1_proof$difference_constant_true)
+```
+
 
 *************************************************************************************************************
