@@ -218,7 +218,7 @@ data_generating_mechanism <- function(sample_size, LD, tau) {
   
   #log transform our data
   min = 0
-  max = ceiling(quantile(my_studies[[1]]$confounder_1, prob = 0.99))
+  max = ceiling(quantile(my_studies[[1]]$confounder_1, prob = 1)) #same as choosing the max
   
   suppressWarnings({ #a lot of warnings... some will be NA i know.
     my_studies[[1]] <- my_studies[[1]] |>
@@ -313,7 +313,7 @@ logistic_quantile_regression_coefficients <- function(basis_study) {
   coefficient_data <- data.frame() #initiliaze empty data frame
   
   for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
-    reg_coeff <- rq(confounder_1_transformed ~ exposure + predictor + outcome, data = basis_study, tau=i)
+    reg_coeff <- rq(confounder_1_transformed ~ exposure + outcome, data = basis_study, tau=i)
     
     new_data <- data.frame(
       b0 = reg_coeff$coefficients[1],
