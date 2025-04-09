@@ -307,25 +307,36 @@ Here are some more functions that will be running our algorithm, along with defi
 
 `logistic_quantile_regression_coefficients` creates our set of regression coefficients from our *basis study* to send to the *missing study*. It outputs a dataset of the coefficients, ready for quantile regression
 
+*warning: if you change the quantile regression, you need to change the data frame*
+
 ```{r}
 logistic_quantile_regression_coefficients <- function(basis_study) {
  
   coefficient_data <- data.frame() #initiliaze empty data frame
   
   for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
-    reg_coeff <- rq(confounder_1_transformed ~ exposure + outcome, data = basis_study, tau=i)
+    reg_coeff <- rq(confounder_1_transformed ~ exposure + outcome + predictor, data = basis_study, tau=i)
     
     new_data <- data.frame(
       b0 = reg_coeff$coefficients[1],
       b_exposure = reg_coeff$coefficients[2],
-      b_predictor = reg_coeff$coefficients[3],
-      b_outcome = reg_coeff$coefficients[4],
+      b_outcome = reg_coeff$coefficients[3],
+      b_predictor = reg_coeff$coefficients[4], #i tried removing this before, but added it back in
       quant = i)
     
     coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
   }
   return(coefficient_data)
 }
+```
+
+```{r, eval=FALSE}
+#a test case... why wasn't this here before?
+test_data <- data_generating_mechanism(sample_size = 500, 
+                                       LD = 0.60, 
+                                       tau = 0)
+
+logistic_quantile_regression_coefficients(as.data.frame(test_data[[1]]))
 ```
 
 `find_prop_missing` finds the proportion of LD data for the missing study. This will end up being useful. It will report a whole number
@@ -360,6 +371,8 @@ uniform_values <- function(specified_max) {
 `imputation_algorithm` is the function that implements imputation for one missing value
 We can use tidyverse functionality to slightly modify the use of this function, *although that may be computationally inefficient*
 
+*warning: make sure to include all the values here for the lower and upper quantile values*
+
 ```{r}
 imputation_algorithm <- function(basis_coefficients, study_for_imputation, 
                                  var_for_imputation, row_index, u_vector) {
@@ -370,17 +383,17 @@ imputation_algorithm <- function(basis_coefficients, study_for_imputation,
   
   #need to calculate regression values... really messy don't look at this
   lower_quantile_value <- floor_quantile$b0 +
-    (floor_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (floor_quantile$b_outcome * study_for_imputation[row_index,]$outcome)
+    (floor_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (floor_quantile$b_outcome * study_for_imputation[row_index,]$outcome) + + (floor_quantile$b_predictor * study_for_imputation[row_index,]$predictor)
 
   upper_quantile_value <- ceiling_quantile$b0 +
-    (ceiling_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (ceiling_quantile$b_outcome * study_for_imputation[row_index,]$outcome)
+    (ceiling_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (ceiling_quantile$b_outcome * study_for_imputation[row_index,]$outcome) + (ceiling_quantile$b_predictor * study_for_imputation[row_index,]$predictor)
 
   modulus <- u_vector[3]
   imputation_value_transformed <- ((1-modulus)*lower_quantile_value) + (modulus*upper_quantile_value)
   
   #lastly, untransform this value using the right min and max... organization is a headache
   min_imp <- 0
-  max_imp <- as.numeric(quantile(study_for_imputation$confounder_1, 0.99)) #only go up to the 99th quantile for our data
+  max_imp <- as.numeric(quantile(study_for_imputation$confounder_1, prob = 1)) #only go up to the 99th quantile for our data
   
   #remember min is 0 and prop_missing gives us the right quantile for calculating max from study_for_imputation
   imputed_value_regular <- inv_log_quant_transform(value = imputation_value_transformed, 
@@ -394,8 +407,8 @@ imputation_algorithm <- function(basis_coefficients, study_for_imputation,
 ```{r, eval=FALSE}
 #test case!
 jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
-                                       LD = 0, #placeholder
-                                       tau = 0.01)
+                                       LD = 0.60, #placeholder
+                                       tau = 0)
 
 #our studies!
 basis_study <- as.data.frame(jokes_are_funny[[1]])
@@ -425,10 +438,14 @@ log_reg_result <- glm(outcome ~ exposure + predictor + confounder_1_fixed_MI,
                           data = missing_study_fixed_MI, 
                           family = "binomial")
   
-exp(log_reg_result$coefficients[2]) - 1.1 #bias
+exp(log_reg_result$coefficients[2]) - log(1.5) #bias
 
 #variance
 (summary(log_reg_result)$coefficients[2, 2])^2 #the first 2 is for exposure, and the second 2 is for accessing the standard error
+
+#rerunning this will give you different histograms based on the uniform value chosen
+ggplot(data = missing_study_fixed_MI, aes(confounder_1_fixed_MI)) + 
+  geom_histogram()
 ```
 
 The `fixed_MI` function performs the fixed multiple imputation algorithm of the CLQI algorithm (aka instead of a random uniform for every missing value, we choose one uniform value for the entire imputation, then do the imputations 10 times and combine using rubin's rules)
@@ -532,7 +549,7 @@ CLQI_algorithm <- function(missing_dataset, basis_coefficients, specified_max) {
 
 ```{r, eval=FALSE}
 #test case
-jokes_are_funny <- data_generating_mechanism(sample_size = 500, 
+jokes_are_funny <- data_generating_mechanism(sample_size = 2500, 
                                              LD = 0.50,
                                              tau = 0)
 
@@ -561,13 +578,10 @@ CLQI_MI_one_iter_ggplot <- CLQI_MI_one_iter |>
                values_to = "value")
 
 
-
 ggplot(data = CLQI_MI_one_iter_ggplot, aes(x = value, group = confounder, color = confounder)) + 
   geom_density() +
   geom_vline(xintercept = LD_line)
 ```
-
-
 
 `CLQI_MI` applies the CLQI algorithm to the missing_dataset 10 times and combines the results according to rubin's rules
 
@@ -825,14 +839,14 @@ one_iteration(specified_sample_size = 500,
               specified_LD = 0.30)
 ```
 
-`repetera_full_simulation` is the function that runs `one_iteration` the specified number of times (for readability sakes... everything should be a function)! This is Swedish for "repeat" (duh) to celebrate my time in Stockholm :)
+`repeat_full_simulation` is the function that runs `one_iteration` the specified number of times
 
 This doesn't necessarily have to be a function, but for repeating this so many times, I think it should...
 
 Lastly, we take these results for each method tested (CLQI, Fixed MI, constant, CC) and calculate the bias, MSE, *coverage rate*, *etc*
 
 ```{r}
-repetera_full_simulation <- function(specified_sample_size, specified_tau, specified_LD, sim_size, b1_true) {
+repeat_full_simulation <- function(specified_sample_size, specified_tau, specified_LD, sim_size, b1_true) {
   
   sim_results <- purrr::map_dfr(1:sim_size, ~ {
   
@@ -878,11 +892,11 @@ This purrr loop (like a for loop but more efficient for R) just runs the `one_it
 ```{r}
 tictoc::tic() #start the timer to check
 
-sim_setting_1_results <- repetera_full_simulation(specified_sample_size = 2500, 
+sim_setting_1_results <- repeat_full_simulation(specified_sample_size = 2500, 
                                                  specified_tau = 0, 
                                                  specified_LD = 0.50, #50% missing data
                                                  sim_size = 1000,
-                                                 b1_true = log(1.5))
+                                                 b1_true = log(1.5)) #LoTE dictates this is fine
 
 tictoc::toc() # Finish the computation time
 ```
