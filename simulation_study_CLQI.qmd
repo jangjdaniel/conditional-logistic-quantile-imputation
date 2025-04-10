@@ -218,7 +218,7 @@ data_generating_mechanism <- function(sample_size, LD, tau) {
   
   #log transform our data
   min = 0
-  max = ceiling(quantile(my_studies[[1]]$confounder_1, prob = 1)) #same as choosing the max
+  max = as.numeric(max(my_studies[[1]]$confounder_1)) #same as choosing the max
   
   suppressWarnings({ #a lot of warnings... some will be NA i know.
     my_studies[[1]] <- my_studies[[1]] |>
@@ -310,24 +310,31 @@ Here are some more functions that will be running our algorithm, along with defi
 *warning: if you change the quantile regression, you need to change the data frame*
 
 ```{r}
-logistic_quantile_regression_coefficients <- function(basis_study) {
- 
-  coefficient_data <- data.frame() #initiliaze empty data frame
-  
-  for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
-    reg_coeff <- rq(confounder_1_transformed ~ exposure + outcome + predictor, data = basis_study, tau=i)
+logistic_quantile_regression_coefficients <- function(basis_study) {suppressWarnings({ 
+
+ #suppress warnings, duh
+  coefficient_data <- data.frame() #initialize empty data frame
     
+  #take out the "inf"
+  basis_study <- basis_study |>
+    filter(confounder_1_transformed != "Inf")
+    
+  for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
+    reg_coeff <- rq(confounder_1_transformed ~ exposure + outcome + predictor, 
+                    data = basis_study, 
+                    tau=i)
+      
     new_data <- data.frame(
       b0 = reg_coeff$coefficients[1],
       b_exposure = reg_coeff$coefficients[2],
       b_outcome = reg_coeff$coefficients[3],
       b_predictor = reg_coeff$coefficients[4], #i tried removing this before, but added it back in
       quant = i)
-    
+      
     coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
   }
   return(coefficient_data)
-}
+})}
 ```
 
 ```{r, eval=FALSE}
@@ -383,7 +390,7 @@ imputation_algorithm <- function(basis_coefficients, study_for_imputation,
   
   #need to calculate regression values... really messy don't look at this
   lower_quantile_value <- floor_quantile$b0 +
-    (floor_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (floor_quantile$b_outcome * study_for_imputation[row_index,]$outcome) + + (floor_quantile$b_predictor * study_for_imputation[row_index,]$predictor)
+    (floor_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (floor_quantile$b_outcome * study_for_imputation[row_index,]$outcome) + (floor_quantile$b_predictor * study_for_imputation[row_index,]$predictor)
 
   upper_quantile_value <- ceiling_quantile$b0 +
     (ceiling_quantile$b_exposure * study_for_imputation[row_index,]$exposure) + (ceiling_quantile$b_outcome * study_for_imputation[row_index,]$outcome) + (ceiling_quantile$b_predictor * study_for_imputation[row_index,]$predictor)
@@ -393,7 +400,7 @@ imputation_algorithm <- function(basis_coefficients, study_for_imputation,
   
   #lastly, untransform this value using the right min and max... organization is a headache
   min_imp <- 0
-  max_imp <- as.numeric(quantile(study_for_imputation$confounder_1, prob = 1)) #only go up to the 99th quantile for our data
+  max_imp <- as.numeric(max(study_for_imputation$confounder_1)) #to the max
   
   #remember min is 0 and prop_missing gives us the right quantile for calculating max from study_for_imputation
   imputed_value_regular <- inv_log_quant_transform(value = imputation_value_transformed, 
@@ -547,6 +554,8 @@ CLQI_algorithm <- function(missing_dataset, basis_coefficients, specified_max) {
 }
 ```
 
+*THIS IS THE MAIN TEST CASE TO MAKE SURE CLQI IS WORKING*
+
 ```{r, eval=FALSE}
 #test case
 jokes_are_funny <- data_generating_mechanism(sample_size = 2500, 
@@ -583,10 +592,10 @@ ggplot(data = CLQI_MI_one_iter_ggplot, aes(x = value, group = confounder, color 
   geom_vline(xintercept = LD_line)
 ```
 
-`CLQI_MI` applies the CLQI algorithm to the missing_dataset 10 times and combines the results according to rubin's rules
+`CLQI_MI` applies the CLQI algorithm to the missing_dataset 20 times and combines the results according to rubin's rules
 
 ```{r}
-CLQI_MI <- function(num_iterations = 10, missing_dataset, 
+CLQI_MI <- function(num_iterations = 20, missing_dataset, 
                     basis_coefficients, var_for_imputation, #var_for_imputation is no longer used
                     specified_max) {
   
@@ -906,9 +915,11 @@ tictoc::toc() # Finish the computation time
 saveRDS(sim_setting_1_results, file="./simulation_results/sim_setting_1.rds")
 ```
 
-```{r}
+```{r, eval=FALSE}
 sim_setting_1_results <- readRDS(file="./simulation_results/sim_setting_1.rds")
+```
 
+```{r}
 ggplot(data=sim_setting_1_results, aes(x=bias_CLQI)) +
   geom_density() +
   geom_vline(aes(xintercept = mean(bias_CLQI)), color = "red", linetype = "dashed", size = 1) +
