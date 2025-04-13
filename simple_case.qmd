@@ -1,0 +1,96 @@
+
+This QMD will house the simple case of CLQI, where we impute missing data from a biomarker through using one study
+This method is similar to Predictive Mean Matching (PMM) where we aim to avoid implausible values and reduce bias after imputation. However, PMM performs well from 10%-30% missing data. After that, Complete Case Analyses seem to perform better
+
+```{r}
+#necessary libraries
+library(tidyverse)
+library(ggplot2)
+library(quantreg)
+library(missMethods)
+library(MASS)
+library(purrr)
+library(tictoc)
+```
+
+Some important transformation functions
+
+```{r}
+#logit and expit functions for myself
+logit <- function(prob) {
+  value <- log(prob / (1 - prob))
+  return(value)
+}
+
+expit <- function(x) {
+  value <- 1 / (1 + exp(-x))
+  return(value)
+}
+
+#now some other transformation functions
+log_quant_transform <- function(value, min, max) {
+  new_value <- log((value - min) / (max - value))
+  
+  if (is.nan(new_value)) {return(NA)} #negative log values return an NA
+  else {return(new_value)}
+}
+
+inv_log_quant_transform <- function(value, min, max) {
+  new_value <- (exp(value)*max + min) / (1+exp(value))
+  return(new_value)
+}
+```
+
+The Data Generating Mechanism: just one study with a very simple mechanism
+
+```{r}
+data_generation <- function(sample_size, missing_prop, 
+                            b_0 = logit(0.3), b_1 = log(1.6), b_2 = log(0.7)) {
+
+  #generate my data
+  B <- rbinom(sample_size, size = 1, prob = 0.4)
+  X <- rchisq(sample_size, df = 5 + 3*B) #if B = 1, X ~ chisq(8)
+  Y <- plogis(b_0 + b_1*X + b_2*B) #we have some effects
+  
+  my_data <- data.frame(
+      confounder = B,
+      biomarker = X,
+      missing_biomarker = X,
+      outcome = Y
+    )
+  
+  my_data <- delete_MCAR(my_data, missing_prop, "missing_biomarker")
+  
+  my_data <- my_data |>
+    mutate(transformed_biomarker = sapply(missing_biomarker, log_quant_transform, min = 0, max = max(X)))
+
+}
+```
+
+some plots of my data, credit to ChatGPT for making this process quicker
+
+```{r}
+created_data <- data_generation(sample_size = 1000, missing_prop = 0.5)
+
+# Convert confounder to a factor for better labeling and aesthetics
+created_data$confounder <- factor(created_data$confounder, levels = c(0, 1), labels = c("Confounder = 0", "Confounder = 1"))
+
+# Create the plot with overlaid density curves
+ggplot(data = created_data, aes(x = biomarker, fill = confounder, color = confounder)) +
+  geom_density(alpha = 0.5) + 
+  labs(
+    title = "Biomarker Distribution by Confounder",
+    x = "Biomarker",
+    y = "Density"
+  ) +
+  scale_fill_manual(values = c("skyblue", "orange")) +  # Custom colors for filling
+  scale_color_manual(values = c("blue", "red"))        # Custom border colors
+```
+
+Perform the algorithm: generate my regression coefficients and bam
+
+```{r}
+
+```
+
+*I remember from STAT 495 that there was a cost vs power formula that we can use*
