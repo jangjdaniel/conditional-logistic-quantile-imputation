@@ -51,27 +51,41 @@ data_generation <- function(sample_size, missing_prop,
   B <- rbinom(sample_size, size = 1, prob = 0.4)
   X <- rchisq(sample_size, df = 5 + 3*B) #if B = 1, X ~ chisq(8)
   Y <- plogis(b_0 + b_1*X + b_2*B) #we have some effects
+  Y_bin <- rbinom(n, size = 1, prob = Y)
+  
   
   my_data <- data.frame(
       confounder = B,
       biomarker = X,
       missing_biomarker = X,
-      outcome = Y
+      outcome = Y_bin
     )
   
   my_data <- delete_MCAR(my_data, missing_prop, "missing_biomarker")
   
   my_data <- my_data |>
-    mutate(transformed_biomarker = sapply(missing_biomarker, log_quant_transform, min = 0, max = max(X)))
-
+    mutate(transformed_biomarker = sapply(missing_biomarker, log_quant_transform, min = 0, max = max(X))) |>
+    filter(transformed_biomarker != "Inf") #just in case there's an infinite value, delete it
 }
 ```
 
 some plots of my data, credit to ChatGPT for making this process quicker
 
 ```{r}
-created_data <- data_generation(sample_size = 1000, missing_prop = 0.5)
+created_data <- data_generation(sample_size = 2000, missing_prop = 0.5)
 
+#FIRST CHECK: Logistic Regression 
+regression_results <- glm(outcome ~ biomarker + confounder,
+                          data = created_data,
+                          family = "binomial")
+
+summary(regression_results)
+log(1.6) #we're good
+```
+
+Second check: Biomarker distributions between the confounder groups
+
+```{r}
 # Convert confounder to a factor for better labeling and aesthetics
 created_data$confounder <- factor(created_data$confounder, levels = c(0, 1), labels = c("Confounder = 0", "Confounder = 1"))
 
@@ -87,10 +101,54 @@ ggplot(data = created_data, aes(x = biomarker, fill = confounder, color = confou
   scale_color_manual(values = c("blue", "red"))        # Custom border colors
 ```
 
-Perform the algorithm: generate my regression coefficients and bam
+Second check: Logistic Regression
 
 ```{r}
 
 ```
+
+
+Perform the algorithm: generate my regression coefficients and bam
+
+```{r}
+coefficient_data <- data.frame()
+
+suppressWarnings({
+  for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
+      reg_coeff <- rq(transformed_biomarker ~ outcome + confounder, 
+                      data = created_data, 
+                      tau=i)
+      
+      #create the data frame 
+      new_data <- data.frame(
+        b0 = reg_coeff$coefficients[1],
+        b_outcome = reg_coeff$coefficients[2],
+        b_confounder = reg_coeff$coefficients[3],
+        quant = i)
+        
+      coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
+    }
+})
+
+coefficient_data
+```
+
+Now we perform the algorithm on the missing data (function from my older document)
+
+```{r}
+#step 1: generate a uniform value from 0 to 1 and extract its floor and modulus
+
+```
+
+After the algorithm, check biomarker distribution of imputed values and also the logistic regression to check parameter of interest
+
+```{r}
+
+```
+
+
+
+
+
 
 *I remember from STAT 495 that there was a cost vs power formula that we can use*
