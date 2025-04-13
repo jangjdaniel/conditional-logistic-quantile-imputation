@@ -29,10 +29,9 @@ expit <- function(x) {
 
 #now some other transformation functions
 log_quant_transform <- function(value, min, max) {
-  new_value <- log((value - min) / (max - value))
-  
-  if (is.nan(new_value)) {return(NA)} #negative log values return an NA
-  else {return(new_value)}
+  if (is.na(value)) return(NA)  # short-circuit if missing
+  if (value <= min | value >= max) return(NA)
+  return(log((value - min) / (max - value)))
 }
 
 inv_log_quant_transform <- function(value, min, max) {
@@ -51,7 +50,7 @@ data_generation <- function(sample_size, missing_prop,
   B <- rbinom(sample_size, size = 1, prob = 0.4)
   X <- rchisq(sample_size, df = 5 + 3*B) #if B = 1, X ~ chisq(8)
   Y <- plogis(b_0 + b_1*X + b_2*B) #we have some effects
-  Y_bin <- rbinom(n, size = 1, prob = Y)
+  Y_bin <- rbinom(sample_size, size = 1, prob = Y)
   
   
   my_data <- data.frame(
@@ -61,11 +60,20 @@ data_generation <- function(sample_size, missing_prop,
       outcome = Y_bin
     )
   
-  my_data <- delete_MCAR(my_data, missing_prop, "missing_biomarker")
+  my_data <- delete_MCAR(my_data, missing_prop, "missing_biomarker") #make missing_prop percent of data missing MCAR
   
-  my_data <- my_data |>
-    mutate(transformed_biomarker = sapply(missing_biomarker, log_quant_transform, min = 0, max = max(X))) |>
-    filter(transformed_biomarker != "Inf") #just in case there's an infinite value, delete it
+  #now we create the transformed variable... sapply is NOT working
+  my_data$transformed_biomarker <- NA
+  
+  for(i in 1:nrow(my_data)) {
+    if(is.na(my_data$missing_biomarker[i])) {
+      my_data$transformed_biomarker[i] <- NA} 
+    else {
+      my_data$transformed_biomarker[i] <- log_quant_transform(my_data$missing_biomarker[i], 
+                                                              min = 0, max = max(my_data$missing_biomarker, na.rm = TRUE))}
+  }
+  
+  return(my_data)
 }
 ```
 
@@ -81,6 +89,8 @@ regression_results <- glm(outcome ~ biomarker + confounder,
 
 summary(regression_results)
 log(1.6) #we're good
+
+created_data
 ```
 
 Second check: Biomarker distributions between the confounder groups
@@ -101,13 +111,6 @@ ggplot(data = created_data, aes(x = biomarker, fill = confounder, color = confou
   scale_color_manual(values = c("blue", "red"))        # Custom border colors
 ```
 
-Second check: Logistic Regression
-
-```{r}
-
-```
-
-
 Perform the algorithm: generate my regression coefficients and bam
 
 ```{r}
@@ -121,7 +124,7 @@ suppressWarnings({
       
       #create the data frame 
       new_data <- data.frame(
-        b0 = reg_coeff$coefficients[1],
+        b_0 = reg_coeff$coefficients[1],
         b_outcome = reg_coeff$coefficients[2],
         b_confounder = reg_coeff$coefficients[3],
         quant = i)
@@ -131,18 +134,223 @@ suppressWarnings({
 })
 
 coefficient_data
+
+#here's the function format
+coefficient_generator <- function(my_data) {
+  suppressWarnings({
+    for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
+        reg_coeff <- rq(transformed_biomarker ~ outcome + confounder, 
+                        data = my_data, 
+                        tau=i)
+        
+        #create the data frame 
+        new_data <- data.frame(
+          b_0 = reg_coeff$coefficients[1],
+          b_outcome = reg_coeff$coefficients[2],
+          b_confounder = reg_coeff$coefficients[3],
+          quant = i)
+          
+        coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
+      }
+  })
+
+  return(coefficient_data)
+}
+  
+coefficient_generator(created_data) #should be the same
 ```
 
 Now we perform the algorithm on the missing data (function from my older document)
+First, here's a function that will generate uniform values really quickly
+*This function returns transformed versions of the values we want to gather*
 
 ```{r}
-#step 1: generate a uniform value from 0 to 1 and extract its floor and modulus
+uniform_values <- function() {
+  u <- runif(1, min = 1, max = 99) #aka from 0.01 to 0.99
+  
+  #all the values we need from the uniform
+  floor_u <- floor(u)
+  mod_u <- (u - floor(u))
+  next_u <- ceiling(u)
+  
+  #now putting this into a vector
+  my_u <- c(u, floor_u, mod_u, next_u)
+  return(my_u)
+}
 
+imputation_algorithm <- function(my_coefficients, my_data, row_index) {
+  
+  u_vector <- uniform_values() #get the uniform values and extract necessary information
+  floor_quantile <- my_coefficients[u_vector[2], ] #floor
+  modulus <- u_vector[3] #modulus
+  ceiling_quantile <- my_coefficients[u_vector[4], ] #ceiling
+  
+  #need to calculate regression values... really messy don't look at this
+  lower_quantile_value <- floor_quantile$b_0 +
+    (floor_quantile$b_outcome * my_data[row_index,]$outcome) + (floor_quantile$b_confounder * my_data[row_index,]$confounder) 
+
+  upper_quantile_value <- ceiling_quantile$b_0 +
+    (ceiling_quantile$b_outcome * my_data[row_index,]$outcome) + (ceiling_quantile$b_confounder * my_data[row_index,]$confounder)
+
+  #now the imputation values!
+  imputation_value_transformed <- ((1-modulus)*lower_quantile_value) + (modulus*upper_quantile_value)
+  
+  return(imputation_value_transformed)
+}
 ```
 
-After the algorithm, check biomarker distribution of imputed values and also the logistic regression to check parameter of interest
+Now we will perform the CLQI algorithm
 
 ```{r}
+#here are the data that we need
+data_for_imp <- data_generation(sample_size = 10000, missing_prop = 0.8)
+max(data_for_imp$biomarker, na.rm=TRUE)
+
+
+coefficient_data_for_imp <- coefficient_generator(data_for_imp)
+
+for(row_index in 1:nrow(data_for_imp)) {
+  if(is.na(data_for_imp$transformed_biomarker[row_index])) {
+    imputed_value <- imputation_algorithm(my_coefficients = coefficient_data_for_imp,
+                                          my_data = data_for_imp,
+                                          row_index = row_index)
+    
+    data_for_imp$transformed_biomarker[row_index] <- imputed_value
+  }
+}
+
+data_for_imp
+```
+
+Untransform my transformed_biomarker and check with the theoretical distribution between both groups
+
+```{r}
+data_for_imp <- data_for_imp |>
+  mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
+                                                  min = 0, max = max(data_for_imp$missing_biomarker, na.rm = TRUE)))
+
+data_for_imp_new <- data_for_imp
+
+data_for_imp_new$confounder <- factor(data_for_imp_new$confounder, levels = c(0, 1), labels = c("Confounder = 0", "Confounder = 1"))
+
+# Create the plot with overlaid density curves
+ggplot(data = data_for_imp_new, aes(x = biomarker, fill = confounder, color = confounder)) +
+  geom_density(alpha = 0.5) + 
+  labs(
+    title = "Biomarker Distribution by Confounder",
+    x = "Biomarker",
+    y = "Density"
+  ) +
+  scale_fill_manual(values = c("skyblue", "orange")) +  # Custom colors for filling
+  scale_color_manual(values = c("blue", "red"))        # Custom border colors
+
+
+ggplot(data = data_for_imp_new, aes(x = untransformed_imputed_biomarker, fill = confounder, color = confounder)) +
+  geom_density(alpha = 0.5) + 
+  labs(
+    title = "Imputed Biomarker Distribution by Confounder",
+    x = "Biomarker",
+    y = "Density"
+  ) +
+  scale_fill_manual(values = c("skyblue", "orange")) +  # Custom colors for filling
+  scale_color_manual(values = c("blue", "red"))        # Custom border colors
+```
+
+```{r}
+my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
+              data = data_for_imp,
+              family = "binomial")
+
+summary(my_glm)$coefficients[2]
+log(1.6)
+```
+
+##############################################
+
+
+Now here is the Multiple Imputation aspect of the method... then we will do a simulation study
+
+```{r}
+values <- c()
+MI_iter <- 10 
+data_for_imp_fresh <- data_generation(sample_size = 10000, missing_prop = 0.8)
+coefficient_data_for_imp <- coefficient_generator(data_for_imp_fresh)
+
+for(imp in 1:MI_iter) {
+  
+  data_for_imp <- data_for_imp_fresh #resets any imputation that happened
+  
+  for(row_index in 1:nrow(data_for_imp)) {
+    if(is.na(data_for_imp$transformed_biomarker[row_index])) {
+      imputed_value <- imputation_algorithm(my_coefficients = coefficient_data_for_imp,
+                                            my_data = data_for_imp,
+                                            row_index = row_index)
+      
+      data_for_imp$transformed_biomarker[row_index] <- imputed_value
+    }
+  }
+  
+  data_for_imp <- data_for_imp |>
+  mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
+                                                  min = 0, max = max(data_for_imp$missing_biomarker, na.rm = TRUE)))
+
+  my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
+              data = data_for_imp,
+              family = "binomial")
+
+  values[imp] <- summary(my_glm)$coefficients[2]
+}
+
+values
+mean(values) - log(1.6) #bias...
+```
+
+Just a quick simulation thing, no functions for now :/
+
+```{r}
+#now 1000 iterations 
+estimate_values <- c()
+num_sim <- 1000 #1000 simulations
+
+tictoc::tic()
+for(i in 1:num_sim) {
+  values <- c()
+  MI_iter <- 10 #just for a test run of course
+  data_for_imp_fresh <- data_generation(sample_size = 10000, missing_prop = 0.8)
+  coefficient_data_for_imp <- coefficient_generator(data_for_imp_fresh)
+  
+  for(imp in 1:MI_iter) {
+    
+    data_for_imp <- data_for_imp_fresh #resets any imputation that happened
+    
+    for(row_index in 1:nrow(data_for_imp)) {
+      if(is.na(data_for_imp$transformed_biomarker[row_index])) {
+        imputed_value <- imputation_algorithm(my_coefficients = coefficient_data_for_imp,
+                                              my_data = data_for_imp,
+                                              row_index = row_index)
+        
+        data_for_imp$transformed_biomarker[row_index] <- imputed_value
+      }
+    }
+    
+    data_for_imp <- data_for_imp |>
+    mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
+                                                    min = 0, max = max(data_for_imp$missing_biomarker, na.rm = TRUE)))
+  
+    my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
+                data = data_for_imp,
+                family = "binomial")
+  
+    values[imp] <- summary(my_glm)$coefficients[2]
+  }
+  
+  #get the estimate values
+  estimate_values[i] <- mean(values)
+}
+tictoc::toc()
+
+hist(estimate_values)
+
 
 ```
 
