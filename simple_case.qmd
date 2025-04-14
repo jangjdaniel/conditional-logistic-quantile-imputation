@@ -284,7 +284,10 @@ ggplot(data = data_for_imp_new, aes(x = untransformed_imputed_biomarker, fill = 
     y = "Density"
   ) +
   scale_fill_manual(values = c("skyblue", "orange")) +  # Custom colors for filling
-  scale_color_manual(values = c("blue", "red"))        # Custom border colors
+  scale_color_manual(values = c("blue", "red")) +       # Custom border colors
+  stat_function(fun = dchisq, args = list(df = 5), aes(color = NULL), linetype = "dashed", size = 1, color = "black") +
+  stat_function(fun = dchisq, args = list(df = 8), aes(color = NULL), linetype = "dotted", size = 1, color = "darkgreen")
+
 ```
 
 ```{r}
@@ -295,6 +298,39 @@ my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
 summary(my_glm)$coefficients[2]
 log(1.6)
 ```
+
+Some extra things: 1-Wasserstein distance and KS test
+
+```{r}
+data_for_imp_zero <- data_for_imp |>
+  filter(confounder == 0)
+
+data_for_imp_one <- data_for_imp |>
+  filter(confounder == 1)
+
+ks.test(data_for_imp_zero$untransformed_imputed_biomarker, "pchisq", df = 5)
+ks.test(data_for_imp_one$untransformed_imputed_biomarker, "pchisq", df = 8)
+```
+
+```{r}
+
+wasserstein_1_distance <- function(variable, my_df) {
+  empirical_cdf <- ecdf(variable)
+  u <- seq(0, 0.9999999, length.out = 1000) #we will be working with the quantile version. Integration approximation
+  
+  #now get the quantiles
+  empirical_quantiles <- quantile(variable, probs = u)
+  theoretical_quantiles <- qchisq(u, df = my_df)
+  
+  return(mean(as.numeric(abs(empirical_quantiles - theoretical_quantiles))))
+}
+
+wasserstein_1_distance(data_for_imp_zero$untransformed_imputed_biomarker, my_df = 5)
+wasserstein_1_distance(data_for_imp_one$untransformed_imputed_biomarker, my_df = 8)
+```
+
+
+
 
 ##############################################
 
@@ -338,6 +374,29 @@ mean(values_CLQI) - log(1.6) #bias...
 
 Just a quick simulation thing, no functions for now :/ (super messy)
 
+```{r}
+#rubin's rule for standard error is complicated, so just keep it in a simple function
+rubin_rule_SE <- function(values_MI, SE_MI) { #both inputs are vectors
+  variance_within_MI <- mean((SE_MI)^2)
+  variance_between_MI <- sum((values_MI - mean(values_MI))^2) / (length(values_MI) - 1)
+  total_variance <- variance_within_MI + variance_between_MI + (variance_between_MI / length(values_MI))
+  
+  return(sqrt(total_variance))
+}
+```
+
+```{r}
+coverage <- function(parameter, SE, t_star, true_val) {
+  if(parameter - t_star*sqrt(SE) <= true_val & true_val <= parameter + t_star*sqrt(SE)) {
+    return(1)
+  } else{
+    return(0)
+  }
+}
+```
+
+
+
 ```{r, eval=FALSE}
 set.seed(500)
 #now 1000 iterations 
@@ -352,7 +411,7 @@ power_PMM <- c()
 my_sample <- 1000
 
 tictoc::tic()
-num_sim <- 1000 #1000 simulations 
+num_sim <- 5000 #5000 simulations cus why not
 for(i in 1:num_sim) { #repeated sampling
   #these are our vectors we will be using for each simulation
   values_CLQI <- c()
@@ -397,40 +456,51 @@ for(i in 1:num_sim) { #repeated sampling
   #get the estimate values FOR BIAS
   estimate_values_CLQI[i] <- mean(values_CLQI)
   
-  #now for the SE
-  variance_within_MI <- mean((SE_CLQI)^2)
-  variance_between_MI <- sum((values_CLQI - mean(values_CLQI))^2) / (length(values_CLQI) - 1)
-  total_variance <- variance_within_MI + variance_between_MI + (variance_between_MI / length(values_CLQI))
-  
   #now FOR COVERAGE
+  total_SE_CLQI <- rubin_rule_SE(values_CLQI, SE_CLQI)
   t_star <- qt(0.975, df = my_sample - 1)
-  coverage_CLQI[i] <- ifelse(mean(values_CLQI) - t_star * sqrt(total_variance) <= log(1.6) & log(1.6) <= mean(values_CLQI) + t_star * sqrt(total_variance), 1, 0)
+  coverage_CLQI[i] <- coverage(parameter = mean(values_CLQI),
+                               SE = total_SE_CLQI,
+                               t_star = t_star,
+                               true_val = log(1.6))
   
   #now for POWER
   power_CLQI[i] <- "not for sale"
   #############################################################################
    
 #PMM
-  data_for_imp_PMM <- data_for_imp_fresh |>
-    dplyr::select(outcome, missing_biomarker, confounder)
-  
-  imp <- mice(data_for_imp_PMM, method = "pmm", m = MI_iter)
-  
-  
-  for(j in 1:MI_iter) {
-  imputed_data <- complete(imp, action = j)
-  my_reg <- glm(outcome ~ missing_biomarker + confounder,
-                data = imputed_data,
-                family = "binomial")
-  
-  values_PMM[j] <- summary(my_reg)$coefficients[2]
-  }
-  
-  estimate_values_PMM[i] <- mean(values_PMM)
-  
-  coverage_PMM[i] <- "not for sale"
-  power_PMM[i] <- "not for sale"
-  
+suppressMessages({
+  suppressWarnings({
+    capture.output({
+      data_for_imp_PMM <- data_for_imp_fresh |>
+        dplyr::select(outcome, missing_biomarker, confounder)
+      
+      imp <- mice(data_for_imp_PMM, method = "pmm", m = MI_iter)
+      
+      for (j in 1:MI_iter) {
+        imputed_data <- complete(imp, action = j)
+        my_reg <- glm(outcome ~ missing_biomarker + confounder,
+                      data = imputed_data,
+                      family = "binomial")
+        
+        values_PMM[j] <- summary(my_reg)$coefficients[2]
+        SE_PMM[j] <- summary(my_reg)$coefficients[2, 2]
+      }
+      
+      estimate_values_PMM[i] <- mean(values_PMM)
+      
+      #now FOR COVERAGE
+      total_SE_PMM <- rubin_rule_SE(values_PMM, SE_PMM)
+      t_star <- qt(0.975, df = my_sample - 1)
+      coverage_PMM[i] <- coverage(parameter = mean(values_PMM),
+                                   SE = total_SE_PMM,
+                                   t_star = t_star,
+                                   true_val = log(1.6))
+
+      power_PMM[i] <- "not for sale"
+    }, file = NULL) # suppress printed output
+  })
+})
   
 }
 tictoc::toc()
@@ -445,17 +515,11 @@ simulations <- data.frame(
   power_PMM = power_PMM
 )
 
+#quick bias checks
 mean(simulations$estimate_values_CLQI) - log(1.6)
 mean(simulations$estimate_values_PMM) - log(1.6)
-```
 
-```{r}
-estimate_values_CLQI 
-coverage_CLQI
-power_CLQI
-estimate_values_PMM 
-coverage_PMM 
-power_PMM
+
 ```
 
 
