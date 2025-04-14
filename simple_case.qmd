@@ -519,46 +519,14 @@ simulations <- data.frame(
 mean(simulations$estimate_values_CLQI) - log(1.6)
 mean(simulations$estimate_values_PMM) - log(1.6)
 
-
+#save this!
+saveRDS(simulations, file="./simulations.rds")
 ```
 
-
-Need to add this stuff above, as well as aggregate everything into a coherent dataset
-
-```{r, eval=FALSE}
-created_data_for_PMM <- data_generation(sample_size = 2000, missing_prop = 0.4) |>
-  dplyr::select(confounder, missing_biomarker, outcome)
-
-#a little test
-imp <- mice(created_data_for_PMM, 
-            method = "pmm", 
-            m = 10, seed = 500)
-
-#larger (but still small) test
-num_imp <- 10
-PMM_coefficients <- c()
-
-for(i in 1:num_imp) {
-  imputed_data <- complete(imp, action = i)
-  my_reg <- glm(outcome ~ missing_biomarker + confounder,
-                data = imputed_data,
-                family = "binomial")
-  
-  PMM_coefficients[i] <- summary(my_reg)$coefficients[2]
-}
-
-PMM_coefficients
-mean(PMM_coefficients) - log(1.6) #we're doing pretty good 
-```
-
-
-
-```{r, eval=FALSE}
-saveRDS(estimate_values_CLQI, file="./beta_results.rds")
-```
+Now a check!
 
 ```{r}
-estimate_values_CLQI <- as.data.frame(readRDS(file="./beta_results.rds")) |>
+estimate_values_CLQI <- as.data.frame(readRDS(file="./simulations.rds")) |>
   rename(result = `readRDS(file = "./beta_results.rds")`) |>
   mutate(bias = result - log(1.6))
 
