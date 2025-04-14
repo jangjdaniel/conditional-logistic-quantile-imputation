@@ -307,7 +307,7 @@ mean(values) - log(1.6) #bias...
 
 Just a quick simulation thing, no functions for now :/
 
-```{r}
+```{r, eval=FALSE}
 #now 1000 iterations 
 estimate_values <- c()
 num_sim <- 1000 #1000 simulations
@@ -349,9 +349,16 @@ for(i in 1:num_sim) {
 }
 tictoc::toc()
 
-hist(estimate_values)
+saveRDS(estimate_values, file="./beta_results.rds")
+```
 
+```{r}
+estimate_values <- as.data.frame(readRDS(file="./beta_results.rds")) |>
+  rename(result = `readRDS(file = "./beta_results.rds")`) |>
+  mutate(bias = result - log(1.6))
 
+ggplot(data = estimate_values, aes(x = bias)) + 
+  geom_density()
 ```
 
 
