@@ -301,8 +301,8 @@ log(1.6)
 
 Now here is the Multiple Imputation aspect of the method... then we will do a simulation study
 
-```{r}
-values <- c()
+```{r, eval=FALSE}
+values_CLQI <- c()
 MI_iter <- 10 
 data_for_imp_fresh <- data_generation(sample_size = 10000, missing_prop = 0.8)
 coefficient_data_for_imp <- coefficient_generator(data_for_imp_fresh)
@@ -329,37 +329,50 @@ for(imp in 1:MI_iter) {
               data = data_for_imp,
               family = "binomial")
 
-  values[imp] <- summary(my_glm)$coefficients[2]
+  values_CLQI[imp] <- summary(my_glm)$coefficients[2]
 }
 
-values
-mean(values) - log(1.6) #bias...
+values_CLQI
+mean(values_CLQI) - log(1.6) #bias...
 ```
 
-Just a quick simulation thing, no functions for now :/
+Just a quick simulation thing, no functions for now :/ (super messy)
 
 ```{r, eval=FALSE}
+set.seed(500)
 #now 1000 iterations 
-estimate_values <- c()
-coverage <- c()
-power <- c()
+estimate_values_CLQI <- c()
+coverage_CLQI <- c()
+power_CLQI <- c()
+estimate_values_PMM <- c()
+coverage_PMM <- c()
+power_PMM <- c()
+
+#my sample size
 my_sample <- 1000
 
-num_sim <- 1000 #1000 simulations
-
 tictoc::tic()
-for(i in 1:num_sim) {
-  values <- c()
-  SE <- c()
-  MI_iter <- 10 #just for a test run of course
+num_sim <- 1000 #1000 simulations 
+for(i in 1:num_sim) { #repeated sampling
+  #these are our vectors we will be using for each simulation
+  values_CLQI <- c()
+  SE_CLQI <- c()
+  values_PMM <- c()
+  SE_PMM <- c()
+  
+  #number of imputations
+  MI_iter <- 10 
+  
+  #data generation and coefficient generation for CLQI
   data_for_imp_fresh <- data_generation(sample_size = my_sample, missing_prop = 0.3)
   coefficient_data_for_imp <- coefficient_generator(data_for_imp_fresh)
   
-  for(imp in 1:MI_iter) {
+#CLQI
+  for(imp in 1:MI_iter) { #multiple imputation
     
     data_for_imp <- data_for_imp_fresh #resets any imputation that happened
     
-    for(row_index in 1:nrow(data_for_imp)) {
+    for(row_index in 1:nrow(data_for_imp)) { #running CLQI algorithm
       if(is.na(data_for_imp$transformed_biomarker[row_index])) {
         imputed_value <- imputation_algorithm(my_coefficients = coefficient_data_for_imp,
                                               my_data = data_for_imp,
@@ -377,28 +390,74 @@ for(i in 1:num_sim) {
                 data = data_for_imp,
                 family = "binomial")
   
-    values[imp] <- summary(my_glm)$coefficients[2]
-    SE[imp] <- summary(my_glm)$coefficients[2, 2]
+    values_CLQI[imp] <- summary(my_glm)$coefficients[2]
+    SE_CLQI[imp] <- summary(my_glm)$coefficients[2, 2]
   }
   
   #get the estimate values FOR BIAS
-  estimate_values[i] <- mean(values)
+  estimate_values_CLQI[i] <- mean(values_CLQI)
   
   #now for the SE
-  variance_within_MI <- mean((SE)^2)
-  variance_between_MI <- sum((values - mean(values))^2) / (length(values) - 1)
-  total_variance <- variance_within_MI + variance_between_MI + (variance_between_MI / length(values))
+  variance_within_MI <- mean((SE_CLQI)^2)
+  variance_between_MI <- sum((values_CLQI - mean(values_CLQI))^2) / (length(values_CLQI) - 1)
+  total_variance <- variance_within_MI + variance_between_MI + (variance_between_MI / length(values_CLQI))
   
   #now FOR COVERAGE
   t_star <- qt(0.975, df = my_sample - 1)
-  coverage[i] <- ifelse(mean(values) - t_star * sqrt(total_variance) <= log(1.6) & log(1.6) <= mean(values) + t_star * sqrt(total_variance), 1, 0)
+  coverage_CLQI[i] <- ifelse(mean(values_CLQI) - t_star * sqrt(total_variance) <= log(1.6) & log(1.6) <= mean(values_CLQI) + t_star * sqrt(total_variance), 1, 0)
   
   #now for POWER
-  power[i] <- "not for sale"
+  power_CLQI[i] <- "not for sale"
+  #############################################################################
+   
+#PMM
+  data_for_imp_PMM <- data_for_imp_fresh |>
+    dplyr::select(outcome, missing_biomarker, confounder)
+  
+  imp <- mice(data_for_imp_PMM, method = "pmm", m = MI_iter)
+  
+  
+  for(j in 1:MI_iter) {
+  imputed_data <- complete(imp, action = j)
+  my_reg <- glm(outcome ~ missing_biomarker + confounder,
+                data = imputed_data,
+                family = "binomial")
+  
+  values_PMM[j] <- summary(my_reg)$coefficients[2]
+  }
+  
+  estimate_values_PMM[i] <- mean(values_PMM)
+  
+  coverage_PMM[i] <- "not for sale"
+  power_PMM[i] <- "not for sale"
+  
   
 }
 tictoc::toc()
+
+#make this into a dataset
+simulations <- data.frame(
+  estimate_values_CLQI = estimate_values_CLQI,
+  coverage_CLQI = coverage_CLQI,
+  power_CLQI = power_CLQI,
+  estimate_values_PMM = estimate_values_PMM,
+  coverage_PMM = coverage_PMM,
+  power_PMM = power_PMM
+)
+
+mean(simulations$estimate_values_CLQI) - log(1.6)
+mean(simulations$estimate_values_PMM) - log(1.6)
 ```
+
+```{r}
+estimate_values_CLQI 
+coverage_CLQI
+power_CLQI
+estimate_values_PMM 
+coverage_PMM 
+power_PMM
+```
+
 
 Need to add this stuff above, as well as aggregate everything into a coherent dataset
 
@@ -431,25 +490,24 @@ mean(PMM_coefficients) - log(1.6) #we're doing pretty good
 
 
 ```{r, eval=FALSE}
-saveRDS(estimate_values, file="./beta_results.rds")
+saveRDS(estimate_values_CLQI, file="./beta_results.rds")
 ```
 
 ```{r}
-estimate_values <- as.data.frame(readRDS(file="./beta_results.rds")) |>
+estimate_values_CLQI <- as.data.frame(readRDS(file="./beta_results.rds")) |>
   rename(result = `readRDS(file = "./beta_results.rds")`) |>
   mutate(bias = result - log(1.6))
 
-ggplot(data = estimate_values, aes(x = bias)) + 
+ggplot(data = estimate_values_CLQI, aes(x = bias)) + 
   geom_density()
 
-mean(estimate_values$bias)
-mean(coverage)
+mean(estimate_values_CLQI$bias)
+mean(coverage_CLQI)
 ```
 
 
-
-
 *I remember from STAT 495 that there was a cost vs power formula that we can use*
+
 ```{r}
 # Plot histogram of your biomarker data
 hist(created_data$biomarker, probability = TRUE, breaks = 100,
