@@ -71,7 +71,7 @@ data_generation <- function(sample_size, missing_prop,
       my_data$transformed_biomarker[i] <- NA} 
     else {
       my_data$transformed_biomarker[i] <- log_quant_transform(my_data$missing_biomarker[i], 
-                                                              min = 0, max = max(my_data$missing_biomarker, na.rm = TRUE))}
+                                                              min = 0, max = max(my_data$biomarker, na.rm = TRUE))}
   }
   
   return(my_data)
@@ -258,7 +258,7 @@ Untransform my transformed_biomarker and check with the theoretical distribution
 ```{r}
 data_for_imp <- data_for_imp |>
   mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
-                                                  min = 0, max = max(data_for_imp$missing_biomarker, na.rm = TRUE)))
+                                                  min = 0, max = max(data_for_imp$biomarker, na.rm = TRUE)))
 
 data_for_imp_new <- data_for_imp
 
@@ -359,7 +359,7 @@ for(imp in 1:MI_iter) {
   
   data_for_imp <- data_for_imp |>
   mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
-                                                  min = 0, max = max(data_for_imp$missing_biomarker, na.rm = TRUE)))
+                                                  min = 0, max = max(data_for_imp$biomarker, na.rm = TRUE)))
 
   my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
               data = data_for_imp,
@@ -462,7 +462,7 @@ for(i in 1:num_sim) { #repeated sampling
     
     data_for_imp <- data_for_imp |>
     mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
-                                                    min = 0, max = max(data_for_imp$missing_biomarker, na.rm = TRUE)))
+                                                    min = 0, max = max(data_for_imp$biomarker, na.rm = TRUE)))
   
     my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
                 data = data_for_imp,
@@ -538,6 +538,22 @@ simulations <- data.frame(
 #quick bias checks
 mean(simulations$estimate_values_CLQI) - log(1.2)
 mean(simulations$estimate_values_PMM) - log(1.2)
+
+ggplot(data = simulations, aes(x = estimate_values_CLQI)) +
+  geom_density() +
+  geom_vline(xintercept = log(1.2))
+
+ggplot(data = simulations, aes(x = estimate_values_PMM)) +
+  geom_density() +
+  geom_vline(xintercept = log(1.2))
+
+#now for coverage
+mean(simulations$coverage_CLQI)
+mean(simulations$coverage_PMM)
+
+#now for power
+mean(simulations$coverage_PMM)
+mean(simulations$power_PMM)
 
 #save this!
 saveRDS(simulations, file="./simulations.rds")
