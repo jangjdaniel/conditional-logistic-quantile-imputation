@@ -45,7 +45,7 @@ The Data Generating Mechanism: just one study with a very simple mechanism
 
 ```{r}
 data_generation <- function(sample_size, missing_prop, 
-                            b_0 = logit(0.1), b_1 = log(1.2), b_2 = log(0.7)) {
+                            b_0 = logit(0.1), b_1 = log(1.1), b_2 = log(0.7)) {
 
   #generate my data
   B <- rbinom(sample_size, size = 1, prob = 0.4)
@@ -89,7 +89,7 @@ regression_results <- glm(outcome ~ biomarker + confounder,
                           family = "binomial")
 
 summary(regression_results)
-log(1.2) #we're good
+log(1.1) #we're good
 
 created_data
 ```
@@ -137,7 +137,7 @@ for(i in 1:num_imp) {
 }
 
 PMM_coefficients
-mean(PMM_coefficients) - log(1.2) #we're doing pretty good 
+mean(PMM_coefficients) - log(1.1) #we're doing pretty good 
 ```
 
 # CLQI
@@ -209,7 +209,25 @@ uniform_values <- function() {
   return(my_u)
 }
 
+
 imputation_algorithm <- function(my_coefficients, my_data, row_index) {
+  
+  u <- runif(1, min = 0, max = 0.99) 
+  
+  reg_coeff <- rq(transformed_biomarker ~ outcome + confounder, 
+                        data = my_data, 
+                        tau = u) #straight up u value
+  
+  b_intercept <- reg_coeff$coefficients[1]
+  b_outcome <- reg_coeff$coefficients[2]
+  b_confounder <- reg_coeff$coefficients[3]
+  
+  imputation_value_transformed <- b_intercept + (b_outcome * my_data[row_index,]$outcome) + (b_confounder * my_data[row_index,]$confounder)
+  
+  return(imputation_value_transformed)
+}
+
+imputation_algorithm_no_sharing <- function(my_coefficients, my_data, row_index) {
   
   u_vector <- uniform_values() #get the uniform values and extract necessary information
   floor_quantile <- my_coefficients[u_vector[2], ] #floor
@@ -232,9 +250,9 @@ imputation_algorithm <- function(my_coefficients, my_data, row_index) {
 
 Now we will perform the CLQI algorithm
 
-```{r}
+```{r, eval=FALSE}
 #here are the data that we need
-data_for_imp <- data_generation(sample_size = 10000, missing_prop = 0.8)
+data_for_imp <- data_generation(sample_size = 1000, missing_prop = 0.3)
 max(data_for_imp$biomarker, na.rm=TRUE)
 
 
@@ -255,7 +273,7 @@ data_for_imp
 
 Untransform my transformed_biomarker and check with the theoretical distribution between both groups
 
-```{r}
+```{r, eval=FALSE}
 data_for_imp <- data_for_imp |>
   mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
                                                   min = 0, max = max(data_for_imp$biomarker, na.rm = TRUE)))
@@ -287,21 +305,20 @@ ggplot(data = data_for_imp_new, aes(x = untransformed_imputed_biomarker, fill = 
   scale_color_manual(values = c("blue", "red")) +       # Custom border colors
   stat_function(fun = dchisq, args = list(df = 5), aes(color = NULL), linetype = "dashed", size = 1, color = "black") +
   stat_function(fun = dchisq, args = list(df = 8), aes(color = NULL), linetype = "dotted", size = 1, color = "darkgreen")
-
 ```
 
-```{r}
+```{r, eval=FALSE}
 my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
               data = data_for_imp,
               family = "binomial")
 
 summary(my_glm)$coefficients[2]
-log(1.2)
+log(1.1)
 ```
 
 Some extra things: 1-Wasserstein distance and KS test
 
-```{r}
+```{r, eval=FALSE}
 data_for_imp_zero <- data_for_imp |>
   filter(confounder == 0)
 
@@ -312,8 +329,7 @@ ks.test(data_for_imp_zero$untransformed_imputed_biomarker, "pchisq", df = 5)
 ks.test(data_for_imp_one$untransformed_imputed_biomarker, "pchisq", df = 8)
 ```
 
-```{r}
-
+```{r, eval=FALSE}
 wasserstein_1_distance <- function(variable, my_df) {
   empirical_cdf <- ecdf(variable)
   u <- seq(0, 0.9999999, length.out = 1000) #we will be working with the quantile version. Integration approximation
@@ -334,13 +350,98 @@ wasserstein_1_distance(data_for_imp_one$untransformed_imputed_biomarker, my_df =
 
 ##############################################
 
+Just a quick simulation thing, no functions for now :/ (super messy)
 
-Now here is the Multiple Imputation aspect of the method... then we will do a simulation study
+```{r}
+#rubin's rule for standard error is complicated, so just keep it in a simple function
+rubin_rule_SE <- function(values_MI, SE_MI) { #both inputs are vectors
+  variance_within_MI <- mean((SE_MI)^2)
+  variance_between_MI <- sum((values_MI - mean(values_MI))^2) / (length(values_MI) - 1)
+  total_variance <- variance_within_MI + variance_between_MI + (variance_between_MI / length(values_MI))
+  
+  return(sqrt(total_variance))
+}
+```
+
+```{r}
+coverage <- function(parameter, SE, t_star, true_val) {
+  if(parameter - t_star*SE <= true_val & true_val <= parameter + t_star*SE) {
+    return(1)
+  } else{
+    return(0)
+  }
+}
+```
+
+```{r}
+power <- function(values_MI, SE_MI, num_MI) {
+  #t stat calculation
+  wald <- mean(values_MI) / rubin_rule_SE(values_MI, SE_MI)
+  
+  #df calculation
+  variance_within_MI <- mean((SE_MI)^2)
+  variance_between_MI <- sum((values_MI - mean(values_MI))^2) / (length(values_MI) - 1)
+  my_frac <- variance_between_MI / (num_MI * variance_within_MI)
+  df <- ((num_MI - 1) / (1 + my_frac)^2) 
+  
+  #our p-value
+  p_value <- 2 * (1 - pt(abs(wald), df))
+  
+  #return 1 if we reject H0 (from DGM, we know H1 to be true)
+  return(ifelse(p_value < 0.05, 1, 0))
+}
+```
+
+*A TEST for PMM* 
+
+```{r, eval=FALSE}
+testing_data <- data_generation(sample_size = 1000, missing_prop = 0.3) |>
+  dplyr::select(confounder, missing_biomarker, outcome)
+
+  num_MI_iter <- 10    
+  imp <- mice(testing_data, method = "pmm", m = num_MI_iter)
+  test_values_PMM <- c()
+  test_SE_PMM <- c()
+  
+      for (j in 1:num_MI_iter) {
+       imputed_data <- complete(imp, action = j)
+        my_reg <- glm(outcome ~ missing_biomarker + confounder,
+                      data = imputed_data,
+                      family = "binomial")
+        
+        test_values_PMM[j] <- summary(my_reg)$coefficients[2]
+        test_SE_PMM[j] <- summary(my_reg)$coefficients[2, 2]
+      }
+      
+  #estimate
+  test_estimate_values_PMM <- mean(test_values_PMM)
+      
+    #now FOR COVERAGE
+    test_total_SE_PMM <- rubin_rule_SE(test_values_PMM, test_SE_PMM)
+      
+    t_star <- qt(0.975, df = 1000 - 1)
+    coverage_PMM <- coverage(parameter = mean(test_values_PMM),
+                             SE = test_total_SE_PMM,
+                             t_star = t_star,
+                             true_val = log(1.1))
+    coverage_PMM
+    
+    #now for power...
+    power_PMM <- power(test_values_PMM, test_SE_PMM, MI_iter)
+    power_PMM
+      
+    #something seems off, so manual calculation... this will get rejected.
+    wald_PMM <- mean(test_values_PMM) / rubin_rule_SE(test_values_PMM, test_SE_PMM)
+    wald_PMM #wow that's low...
+```
+
+*A TEST FOR CLQI*
 
 ```{r, eval=FALSE}
 values_CLQI <- c()
+SE_CLQI <- c()
 MI_iter <- 10 
-data_for_imp_fresh <- data_generation(sample_size = 10000, missing_prop = 0.8)
+data_for_imp_fresh <- data_generation(sample_size = 1000, missing_prop = 0.3)
 coefficient_data_for_imp <- coefficient_generator(data_for_imp_fresh)
 
 for(imp in 1:MI_iter) {
@@ -366,52 +467,28 @@ for(imp in 1:MI_iter) {
               family = "binomial")
 
   values_CLQI[imp] <- summary(my_glm)$coefficients[2]
+  SE_CLQI[imp] <- summary(my_glm)$coefficients[2,2]
 }
+
+      estimated_CLQI <- mean(values_CLQI)
+      
+      #now FOR COVERAGE
+      test_total_SE_PMM <- rubin_rule_SE(values_CLQI, SE_CLQI)
+      
+      t_star <- qt(0.975, df = 1000 - 1)
+      coverage_PMM <- coverage(parameter = mean(values_CLQI),
+                                SE = test_total_SE_PMM,
+                                t_star = t_star,
+                                true_val = log(1.1))
+
+      #power
+      power_CLQI <- power(values_CLQI, SE_CLQI, MI_iter)
+      
+      wald_CLQI <- mean(values_CLQI) / rubin_rule_SE(values_CLQI, SE_CLQI)
+      wald_CLQI  
 
 values_CLQI
-mean(values_CLQI) - log(1.2) #bias...
-```
-
-Just a quick simulation thing, no functions for now :/ (super messy)
-
-```{r}
-#rubin's rule for standard error is complicated, so just keep it in a simple function
-rubin_rule_SE <- function(values_MI, SE_MI) { #both inputs are vectors
-  variance_within_MI <- mean((SE_MI)^2)
-  variance_between_MI <- sum((values_MI - mean(values_MI))^2) / (length(values_MI) - 1)
-  total_variance <- variance_within_MI + variance_between_MI + (variance_between_MI / length(values_MI))
-  
-  return(sqrt(total_variance))
-}
-```
-
-```{r}
-coverage <- function(parameter, SE, t_star, true_val) {
-  if(parameter - t_star*sqrt(SE) <= true_val & true_val <= parameter + t_star*sqrt(SE)) {
-    return(1)
-  } else{
-    return(0)
-  }
-}
-```
-
-```{r}
-power <- function(values_MI, SE_MI, num_MI) {
-  #t stat calculation
-  wald <- mean(values_MI) / rubin_rule_SE(values_MI, SE_MI)
-  
-  #df calculation
-  variance_within_MI <- mean((SE_MI)^2)
-  variance_between_MI <- sum((values_MI - mean(values_MI))^2) / (length(values_MI) - 1)
-  my_frac <- variance_between_MI / (num_MI * variance_within_MI)
-  df <- ((num_MI - 1) / (1 + my_frac)^2) 
-  
-  #our p-value
-  p_value <- 2 * (1 - pt(abs(wald), df))
-  
-  #return 1 if we reject H0 (from DGM, we know H1 to be true)
-  return(ifelse(p_value < 0.05, 1, 0))
-}
+mean(values_CLQI) - log(1.1) #bias...
 ```
 
 MY INITIAL SIMULATION STUDY
@@ -481,7 +558,7 @@ for(i in 1:num_sim) { #repeated sampling
   coverage_CLQI[i] <- coverage(parameter = mean(values_CLQI),
                                SE = total_SE_CLQI,
                                t_star = t_star,
-                               true_val = log(1.2))
+                               true_val = log(1.1))
   
   #now for POWER
   
@@ -515,7 +592,7 @@ suppressMessages({
       coverage_PMM[i] <- coverage(parameter = mean(values_PMM),
                                    SE = total_SE_PMM,
                                    t_star = t_star,
-                                   true_val = log(1.2))
+                                   true_val = log(1.1))
 
       power_PMM[i] <- power(values_PMM, SE_PMM, MI_iter)
     }, file = NULL) # suppress printed output
@@ -536,41 +613,34 @@ simulations <- data.frame(
 )
 
 #quick bias checks
-mean(simulations$estimate_values_CLQI) - log(1.2)
-mean(simulations$estimate_values_PMM) - log(1.2)
-
-ggplot(data = simulations, aes(x = estimate_values_CLQI)) +
-  geom_density() +
-  geom_vline(xintercept = log(1.2))
-
-ggplot(data = simulations, aes(x = estimate_values_PMM)) +
-  geom_density() +
-  geom_vline(xintercept = log(1.2))
+mean(simulations$estimate_values_CLQI) - log(1.1)
+mean(simulations$estimate_values_PMM) - log(1.1)
 
 #now for coverage
 mean(simulations$coverage_CLQI)
 mean(simulations$coverage_PMM)
 
 #now for power
-mean(simulations$coverage_PMM)
+mean(simulations$power_CLQI)
 mean(simulations$power_PMM)
 
 #save this!
-saveRDS(simulations, file="./simulations.rds")
+#saveRDS(simulations, file="./simulations.rds")
 ```
 
 Now a check!
 
 ```{r}
-estimate_values_CLQI <- as.data.frame(readRDS(file="./simulations.rds")) |>
-  rename(result = `readRDS(file = "./beta_results.rds")`) |>
-  mutate(bias = result - log(1.2))
+simulation_setting <- readRDS(file="./simulations.rds")
 
-ggplot(data = estimate_values_CLQI, aes(x = bias)) + 
-  geom_density()
 
-mean(estimate_values_CLQI$bias)
-mean(coverage_CLQI)
+ggplot(data = simulation_setting, aes(x = estimate_values_CLQI)) +
+  geom_density() +
+  geom_vline(xintercept = log(1.1))
+
+ggplot(data = simulation_setting, aes(x = estimate_values_PMM)) +
+  geom_density() +
+  geom_vline(xintercept = log(1.1))
 ```
 
 
@@ -597,6 +667,5 @@ lines(x_vals, mixture_density, col = "red", lwd = 2)
 # Add a legend
 legend("topright", legend = "Theoretical Mixture: 0.6 * χ²(5) + 0.4 * χ²(8)",
        col = "red", lwd = 2, bty = "n")
-
 ```
 
