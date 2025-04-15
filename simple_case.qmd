@@ -45,7 +45,7 @@ The Data Generating Mechanism: just one study with a very simple mechanism
 
 ```{r}
 data_generation <- function(sample_size, missing_prop, 
-                            b_0 = logit(0.3), b_1 = log(1.6), b_2 = log(0.7)) {
+                            b_0 = logit(0.1), b_1 = log(1.2), b_2 = log(0.7)) {
 
   #generate my data
   B <- rbinom(sample_size, size = 1, prob = 0.4)
@@ -89,7 +89,7 @@ regression_results <- glm(outcome ~ biomarker + confounder,
                           family = "binomial")
 
 summary(regression_results)
-log(1.6) #we're good
+log(1.2) #we're good
 
 created_data
 ```
@@ -137,7 +137,7 @@ for(i in 1:num_imp) {
 }
 
 PMM_coefficients
-mean(PMM_coefficients) - log(1.6) #we're doing pretty good 
+mean(PMM_coefficients) - log(1.2) #we're doing pretty good 
 ```
 
 # CLQI
@@ -296,7 +296,7 @@ my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
               family = "binomial")
 
 summary(my_glm)$coefficients[2]
-log(1.6)
+log(1.2)
 ```
 
 Some extra things: 1-Wasserstein distance and KS test
@@ -369,7 +369,7 @@ for(imp in 1:MI_iter) {
 }
 
 values_CLQI
-mean(values_CLQI) - log(1.6) #bias...
+mean(values_CLQI) - log(1.2) #bias...
 ```
 
 Just a quick simulation thing, no functions for now :/ (super messy)
@@ -395,7 +395,26 @@ coverage <- function(parameter, SE, t_star, true_val) {
 }
 ```
 
+```{r}
+power <- function(values_MI, SE_MI, num_MI) {
+  #t stat calculation
+  wald <- mean(values_MI) / rubin_rule_SE(values_MI, SE_MI)
+  
+  #df calculation
+  variance_within_MI <- mean((SE_MI)^2)
+  variance_between_MI <- sum((values_MI - mean(values_MI))^2) / (length(values_MI) - 1)
+  my_frac <- variance_between_MI / (num_MI * variance_within_MI)
+  df <- ((num_MI - 1) / (1 + my_frac)^2) 
+  
+  #our p-value
+  p_value <- 2 * (1 - pt(abs(wald), df))
+  
+  #return 1 if we reject H0 (from DGM, we know H1 to be true)
+  return(ifelse(p_value < 0.05, 1, 0))
+}
+```
 
+MY INITIAL SIMULATION STUDY
 
 ```{r, eval=FALSE}
 set.seed(500)
@@ -411,7 +430,7 @@ power_PMM <- c()
 my_sample <- 1000
 
 tictoc::tic()
-num_sim <- 5000 #5000 simulations cus why not
+num_sim <- 1000 #1000 simulations cus why not
 for(i in 1:num_sim) { #repeated sampling
   #these are our vectors we will be using for each simulation
   values_CLQI <- c()
@@ -462,10 +481,11 @@ for(i in 1:num_sim) { #repeated sampling
   coverage_CLQI[i] <- coverage(parameter = mean(values_CLQI),
                                SE = total_SE_CLQI,
                                t_star = t_star,
-                               true_val = log(1.6))
+                               true_val = log(1.2))
   
   #now for POWER
-  power_CLQI[i] <- "not for sale"
+  
+  power_CLQI[i] <- power(values_CLQI, SE_CLQI, MI_iter)
   #############################################################################
    
 #PMM
@@ -495,9 +515,9 @@ suppressMessages({
       coverage_PMM[i] <- coverage(parameter = mean(values_PMM),
                                    SE = total_SE_PMM,
                                    t_star = t_star,
-                                   true_val = log(1.6))
+                                   true_val = log(1.2))
 
-      power_PMM[i] <- "not for sale"
+      power_PMM[i] <- power(values_PMM, SE_PMM, MI_iter)
     }, file = NULL) # suppress printed output
   })
 })
@@ -516,8 +536,8 @@ simulations <- data.frame(
 )
 
 #quick bias checks
-mean(simulations$estimate_values_CLQI) - log(1.6)
-mean(simulations$estimate_values_PMM) - log(1.6)
+mean(simulations$estimate_values_CLQI) - log(1.2)
+mean(simulations$estimate_values_PMM) - log(1.2)
 
 #save this!
 saveRDS(simulations, file="./simulations.rds")
@@ -528,7 +548,7 @@ Now a check!
 ```{r}
 estimate_values_CLQI <- as.data.frame(readRDS(file="./simulations.rds")) |>
   rename(result = `readRDS(file = "./beta_results.rds")`) |>
-  mutate(bias = result - log(1.6))
+  mutate(bias = result - log(1.2))
 
 ggplot(data = estimate_values_CLQI, aes(x = bias)) + 
   geom_density()
