@@ -625,7 +625,7 @@ mean(simulations$power_CLQI)
 mean(simulations$power_PMM)
 
 #save this!
-#saveRDS(simulations, file="./simulations.rds")
+saveRDS(simulations, file="./simulations.rds")
 ```
 
 Now a check!
