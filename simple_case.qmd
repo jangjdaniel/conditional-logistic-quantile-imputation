@@ -588,18 +588,13 @@ c[1] #the estimate
 
 
 
-
-
-
-
-
 # MY INITIAL SIMULATION STUDY
 
 ```{r}
 #this is to make reading the code much easier
 set.seed(500)
 my_sample <- 1000 #sample size for each dataset
-num_sim <- 2 #number of simulations
+num_sim <- 1000 #number of simulations
 MI_iter <- 10
 prop_data_missing <- 0.3 #proportion of data missing
 
@@ -681,18 +676,29 @@ for(i in 1:num_sim) { #for each simulation
 }
 tictoc::toc()
 
+#create bias rows
+bias_values_PMM <- estimate_values_PMM - log(1.1)
+bias_values_CLQI <- estimate_values_CLQI - log(1.1)
+bias_values_CC <- estimate_values_CC - log(1.1)
+
 #and at the end, combine all these vectors into a single dataframe
 my_simulation_results <- data.frame(
   estimate_values_PMM = estimate_values_PMM,
+  bias_values_PMM = bias_values_PMM,
   SE_values_PMM = SE_values_PMM,
+  RMSE_values_PMM = sqrt(bias_values_PMM^2 + SE_values_PMM^2),
   coverage_PMM = coverage_PMM,
-  power_PMM = power_PMM,
+  power_PMM = power_PMM, #done
   estimate_values_CLQI = estimate_values_CLQI,
+  bias_values_CLQI = bias_values_CLQI,
   SE_values_CLQI = SE_values_CLQI,
+  RMSE_values_CLQI = sqrt(bias_values_CLQI^2 + SE_values_CLQI^2),
   coverage_CLQI = coverage_CLQI,
-  power_CLQI = power_CLQI,
+  power_CLQI = power_CLQI, #done
   estimate_values_CC= estimate_values_CC,
+  bias_values_CC= bias_values_CC,
   SE_values_CC = SE_values_CC,
+  RMSE_values_CC = sqrt(bias_values_CC^2 + SE_values_CC^2),
   coverage_CC = coverage_CC,
   power_CC = power_CC
 )
