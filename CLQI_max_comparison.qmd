@@ -203,50 +203,38 @@ data_for_imp <- data_for_imp |>
 data_for_imp #check the transformed_biomarker variable, not the missing_biomarker variable!
 ```
 
-*need to edit this to show all four transformed variables in a grid*
-*then i need to incorporate this into this qmd's simulation!
-
-########################################################
-
-
-
-
-
-
-
-
-
-A continuation of the previous chunk to show the distributions of the imputed data with the theoretical distributions
+Now we will show what these distributions look like:
 
 ```{r, eval=FALSE}
 data_for_imp_new <- data_for_imp
-
 data_for_imp_new$confounder <- factor(data_for_imp_new$confounder, levels = c(0, 1), labels = c("Confounder = 0", "Confounder = 1"))
 
-# Create the plot with overlaid density curves
-ggplot(data = data_for_imp_new, aes(x = biomarker, fill = confounder, color = confounder)) +
-  geom_density(alpha = 0.5) + 
+#some data transformation
+data_long <- data_for_imp_new |>
+  dplyr::select(!biomarker) |>
+  pivot_longer(
+    cols = starts_with("untransformed_imputed_biomarker_"),
+    names_to = "biomarker",
+    values_to = "value"
+  )
+
+ggplot(data_long, aes(x = value, fill = confounder, color = confounder)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~ biomarker, scales = "free") +  # Adjust scales as needed
   labs(
-    title = "Biomarker Distribution by Confounder",
+    title = "Imputed Biomarker Distributions by Confounder",
     x = "Biomarker",
     y = "Density"
   ) +
-  scale_fill_manual(values = c("skyblue", "orange")) +  # Custom colors for filling
-  scale_color_manual(values = c("blue", "red"))        # Custom border colors
-
-
-ggplot(data = data_for_imp_new, aes(x = untransformed_imputed_biomarker, fill = confounder, color = confounder)) +
-  geom_density(alpha = 0.5) + 
-  labs(
-    title = "Imputed Biomarker Distribution by Confounder",
-    x = "Biomarker",
-    y = "Density"
-  ) +
-  scale_fill_manual(values = c("skyblue", "orange")) +  # Custom colors for filling
-  scale_color_manual(values = c("blue", "red")) +       # Custom border colors
-  stat_function(fun = dchisq, args = list(df = 5), aes(color = NULL), linetype = "dashed", size = 1, color = "black") +
-  stat_function(fun = dchisq, args = list(df = 8), aes(color = NULL), linetype = "dotted", size = 1, color = "darkgreen")
+  scale_fill_manual(values = c("skyblue", "orange")) +
+  scale_color_manual(values = c("blue", "red")) +
+  stat_function(fun = dchisq, args = list(df = 5), aes(color = NULL),
+                linetype = "dashed", size = 1, color = "black") +
+  stat_function(fun = dchisq, args = list(df = 8), aes(color = NULL),
+                linetype = "dotted", size = 1, color = "darkgreen")
 ```
+
+########################################################
 
 Now for simulations: we defined a couple of functions to make verything much easier
 
@@ -290,126 +278,103 @@ power <- function(values_MI, SE_MI, num_MI) {
 }
 ```
 
-
-## *A TEST FOR CLQI*
-
-```{r, eval=FALSE}
-values_CLQI <- c()
-SE_CLQI <- c()
-MI_iter <- 10 
-data_for_imp_fresh <- data_generation(sample_size = 1000, missing_prop = 0.3)
-
-for(imp in 1:MI_iter) {
-  
-  data_for_imp <- data_for_imp_fresh #resets any imputation that happened
-  
-  for(row_index in 1:nrow(data_for_imp)) {
-    if(is.na(data_for_imp$transformed_biomarker[row_index])) {
-      imputed_value <- imputation_algorithm(my_data = data_for_imp,
-                                            row_index = row_index)
-      
-      data_for_imp$transformed_biomarker[row_index] <- imputed_value
-    }
-  }
-  
-  data_for_imp <- data_for_imp |>
-  mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
-                                                  min = 0, max = max(data_for_imp$biomarker, na.rm = TRUE)))
-
-  my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
-              data = data_for_imp,
-              family = "binomial")
-
-  values_CLQI[imp] <- summary(my_glm)$coefficients[2]
-  SE_CLQI[imp] <- summary(my_glm)$coefficients[2,2]
-}
-
-      estimated_CLQI <- mean(values_CLQI)
-      
-      #now FOR COVERAGE
-      test_total_SE_PMM <- rubin_rule_SE(values_CLQI, SE_CLQI)
-      
-      t_star <- qt(0.975, df = 1000 - 1)
-      coverage_PMM <- coverage(parameter = mean(values_CLQI),
-                                SE = test_total_SE_PMM,
-                                t_star = t_star,
-                                true_val = log(1.1))
-
-      #power
-      power_CLQI <- power(values_CLQI, SE_CLQI, MI_iter)
-      
-      wald_CLQI <- mean(values_CLQI) / rubin_rule_SE(values_CLQI, SE_CLQI)
-      wald_CLQI  
-
-values_CLQI
-mean(values_CLQI) - log(1.1) #bias...
-```
-
 ### *A FUNCTION FOR CLQI*
 
 ```{r}
 CLQI <- function(my_data, num_MI_iter) {
   
-  values_CLQI <- c()
-  SE_CLQI <- c()
+  values_CLQI_1 <- c()
+  SE_CLQI_1 <- c()
+  values_CLQI_2 <- c()
+  SE_CLQI_2 <- c()
+  values_CLQI_3 <- c()
+  SE_CLQI_3 <- c()
+  values_CLQI_4 <- c()
+  SE_CLQI_4 <- c()
   
   for(imp in 1:num_MI_iter) {
     my_data_iteration <- my_data #resets any imputation that happened
     
-    for(row_index in 1:nrow(my_data_iteration)) {
-      if(is.na(my_data_iteration$transformed_biomarker[row_index])) {
-        imputed_value <- imputation_algorithm(my_data = my_data_iteration,
-                                              row_index = row_index)
-        
-        my_data_iteration$transformed_biomarker[row_index] <- imputed_value
-      }
-    }
+    biomarkers <- c("transformed_biomarker_1", "transformed_biomarker_2", 
+                "transformed_biomarker_3", "transformed_biomarker_4")
+    
+    #applies the CLQI function to all the biomarkers we have
+    my_data_iteration <- impute_multiple_biomarkers(my_data_iteration, biomarkers)
+    
+    #after the CLQI algorithm, untransform all our values
+    
+    my_data_iteration <- my_data_iteration |>
+      mutate(untransformed_imputed_biomarker_1 = sapply(transformed_biomarker_1, inv_log_quant_transform, 
+                                                        min = 0, max = max(my_data_iteration$missing_biomarker, na.rm = TRUE))) |>
+      mutate(untransformed_imputed_biomarker_2 = sapply(transformed_biomarker_2, inv_log_quant_transform, 
+                                                        min = 0, max = max(my_data_iteration$biomarker, na.rm = TRUE))) |>
+      mutate(untransformed_imputed_biomarker_3 = sapply(transformed_biomarker_3, inv_log_quant_transform, 
+                                                        min = 0, max = q_9999)) |>
+      mutate(untransformed_imputed_biomarker_4 = sapply(transformed_biomarker_4, inv_log_quant_transform, 
+                                                        min = 0, max = q_999999))
+
+  #now we can run logistic regression
+    glm_1 <- glm(outcome ~ untransformed_imputed_biomarker_1 + confounder,
+                data = my_data_iteration,
+                family = "binomial")
   
-  #after running the algorithm, we untransform, perform log reg, save coefficients, rinse and repeat
-  my_data_iteration <- my_data_iteration |>
-  mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
-                                                  min = 0, max = max(my_data_iteration$biomarker, na.rm = TRUE)))
-
-  my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
-              data = my_data_iteration,
-              family = "binomial")
-
-  values_CLQI[imp] <- summary(my_glm)$coefficients[2]
-  SE_CLQI[imp] <- summary(my_glm)$coefficients[2,2]
+    values_CLQI_1[imp] <- summary(glm_1)$coefficients[2]
+    SE_CLQI_1[imp] <- summary(glm_1)$coefficients[2,2]
+  
+    #second one
+    glm_2 <- glm(outcome ~ untransformed_imputed_biomarker_2 + confounder,
+                data = my_data_iteration,
+                family = "binomial")
+  
+    values_CLQI_2[imp] <- summary(glm_2)$coefficients[2]
+    SE_CLQI_2[imp] <- summary(glm_2)$coefficients[2,2]
+  
+    #third one
+    glm_3 <- glm(outcome ~ untransformed_imputed_biomarker_3 + confounder,
+                data = my_data_iteration,
+                family = "binomial")
+  
+    values_CLQI_3[imp] <- summary(glm_3)$coefficients[2]
+    SE_CLQI_3[imp] <- summary(glm_3)$coefficients[2,2]
+    
+    #fourth one
+    glm_4 <- glm(outcome ~ untransformed_imputed_biomarker_4 + confounder,
+                data = my_data_iteration,
+                family = "binomial")
+  
+    values_CLQI_4[imp] <- summary(glm_4)$coefficients[2]
+    SE_CLQI_4[imp] <- summary(glm_4)$coefficients[2,2]
   } 
   
-  CLQI_results <- list(values_CLQI, SE_CLQI)
+  CLQI_results <- data.frame(
+    values_CLQI_1 = values_CLQI_1,
+    SE_CLQI_1 = SE_CLQI_1,
+    values_CLQI_2 = values_CLQI_2,
+    SE_CLQI_2 = SE_CLQI_2,
+    values_CLQI_3 = values_CLQI_3,
+    SE_CLQI_3 = SE_CLQI_3,
+    values_CLQI_4 = values_CLQI_4,
+    SE_CLQI_4 = SE_CLQI_4
+  )
+  
   return(CLQI_results)
 }
-
-testing_data <- data_generation(sample_size = 1000, missing_prop = 0.3)
-
-b <- CLQI(testing_data, num_MI_iter = 10)
-b[1]
 ```
+
+Super quick test case!
 
 ```{r}
-complete_case <- function(my_data) {
-  my_glm <- glm(outcome ~ missing_biomarker + confounder,
-              data = my_data,
-              family = "binomial")
-  
-  value_CC <- summary(my_glm)$coefficients[2]
-  SE_CC <- summary(my_glm)$coefficients[2,2]
-  pval_CC <- summary(my_glm)$coefficients["missing_biomarker", "Pr(>|z|)"]
-  
-  return(c(value_CC, SE_CC, pval_CC))
-}
-
 testing_data <- data_generation(sample_size = 1000, missing_prop = 0.3)
+b <- CLQI(testing_data, num_MI_iter = 10)
 
-c <- complete_case(testing_data)
-c[1] #the estimate
+#check out the bias of this thing
+mean(b$values_CLQI_1) - log(1.1)
+mean(b$values_CLQI_2) - log(1.1)
+mean(b$values_CLQI_3) - log(1.1)
+mean(b$values_CLQI_4) - log(1.1)
 ```
 
-
-
-# MY INITIAL SIMULATION STUDY
+# Sensitivity Analysis Time!
 
 ```{r}
 #this is to make reading the code much easier
@@ -420,20 +385,26 @@ MI_iter <- 10
 prop_data_missing <- 0.3 #proportion of data missing
 
 #here are some vectors we have to define... this is still messy since it's not in a full function
-estimate_values_PMM <- c()
-SE_values_PMM <- c()
-coverage_PMM <- c()
-power_PMM <- c()
 
-estimate_values_CLQI <- c()
-SE_values_CLQI <- c()
-coverage_CLQI <- c()
-power_CLQI <- c()
+estimate_values_CLQI_1 <- c()
+SE_values_CLQI_1 <- c()
+coverage_CLQI_1 <- c()
+power_CLQI_1 <- c()
 
-estimate_values_CC <- c()
-SE_values_CC <- c()
-coverage_CC <- c()
-power_CC <- c()
+estimate_values_CLQI_2 <- c()
+SE_values_CLQI_2 <- c()
+coverage_CLQI_2 <- c()
+power_CLQI_2 <- c()
+
+estimate_values_CLQI_3 <- c()
+SE_values_CLQI_3 <- c()
+coverage_CLQI_3 <- c()
+power_CLQI_3 <- c()
+
+estimate_values_CLQI_4 <- c()
+SE_values_CLQI_4 <- c()
+coverage_CLQI_4 <- c()
+power_CLQI_4 <- c()
 
 #now for our loop
 tictoc::tic() #check runtime for entire simulation
@@ -441,90 +412,103 @@ for(i in 1:num_sim) { #for each simulation
   data_for_imp <- data_generation(sample_size = my_sample, 
                                   missing_prop = prop_data_missing) #generate my data
   
-  #get values for estimate and SE from PMM
-  data_for_imp_PMM <- data_for_imp  |>
-    dplyr::select(confounder, missing_biomarker, outcome)
-  
-  PMM_results <- PMM(data_for_imp_PMM, num_MI_iter = MI_iter) #1 is estimates, 2 is SE
-    values_PMM <- as.vector(PMM_results[[1]])
-    SE_PMM <- as.vector(PMM_results[[2]])
-  
-  #perform calculations to get estimate, bias, relative bias, RMSE, coverage, power for PMM
-      estimate_values_PMM[i] <- mean(values_PMM)
-      SE_values_PMM[i] <- rubin_rule_SE(values_PMM, SE_PMM)
-      
-      t_star <- qt(0.975, df = my_sample - 1)
-      coverage_PMM[i] <- coverage(parameter = estimate_values_PMM[i],
-                                  SE = SE_values_PMM[i],
-                                  t_star = t_star,
-                                  true_val = log(1.1))
-      
-      power_PMM[i] <- power(values_PMM, SE_PMM, MI_iter)
-####
   #get values for estimate and SE from CLQI
-  CLQI_results <- CLQI(data_for_imp, num_MI_iter = MI_iter) #1 is estimates, 2 is SE
-    values_CLQI <- as.vector(CLQI_results[[1]])
-    SE_CLQI <- as.vector(CLQI_results[[2]])
-
-  #perform calculations to get estimate, bias, relative bias, RMSE, coverage, power for CLQI
-      estimate_values_CLQI[i] <- mean(values_CLQI)
-      SE_values_CLQI[i] <- rubin_rule_SE(values_CLQI, SE_CLQI)
-      
-      t_star <- qt(0.975, df = my_sample - 1)
-      coverage_CLQI[i] <- coverage(parameter = estimate_values_CLQI[i],
-                                   SE = SE_values_CLQI[i],
+  CLQI_results <- CLQI(data_for_imp, num_MI_iter = MI_iter)
+    
+  #ESTIMATES
+    estimate_values_CLQI_1[i] <- mean(CLQI_results$values_CLQI_1)
+    estimate_values_CLQI_2[i] <- mean(CLQI_results$values_CLQI_2)
+    estimate_values_CLQI_3[i] <- mean(CLQI_results$values_CLQI_3)
+    estimate_values_CLQI_4[i] <- mean(CLQI_results$values_CLQI_4)
+  
+  #SE
+    SE_values_CLQI_1[i] <- rubin_rule_SE(as.vector(CLQI_results$values_CLQI_1), 
+                                         as.vector(CLQI_results$SE_CLQI_1))
+    SE_values_CLQI_2[i] <- rubin_rule_SE(as.vector(CLQI_results$values_CLQI_2), 
+                                         as.vector(CLQI_results$SE_CLQI_2))
+    SE_values_CLQI_3[i] <- rubin_rule_SE(as.vector(CLQI_results$values_CLQI_3), 
+                                         as.vector(CLQI_results$SE_CLQI_3))
+    SE_values_CLQI_4[i] <- rubin_rule_SE(as.vector(CLQI_results$values_CLQI_4), 
+                                         as.vector(CLQI_results$SE_CLQI_4))
+    
+  #generate t star value right now
+  t_star <- qt(0.975, df = my_sample - 1)
+    
+  #Coverage
+    coverage_CLQI_1[i] <- coverage(parameter = estimate_values_CLQI_1[i],
+                                   SE = SE_values_CLQI_1[i],
+                                   t_star = t_star,
+                                   true_val = log(1.1))
+    
+    coverage_CLQI_2[i] <- coverage(parameter = estimate_values_CLQI_2[i],
+                                   SE = SE_values_CLQI_2[i],
+                                   t_star = t_star,
+                                   true_val = log(1.1))
+    
+    coverage_CLQI_3[i] <- coverage(parameter = estimate_values_CLQI_3[i],
+                                   SE = SE_values_CLQI_3[i],
+                                   t_star = t_star,
+                                   true_val = log(1.1))
+    
+    coverage_CLQI_4[i] <- coverage(parameter = estimate_values_CLQI_4[i],
+                                   SE = SE_values_CLQI_4[i],
                                    t_star = t_star,
                                    true_val = log(1.1))
       
-      power_CLQI[i] <- power(values_CLQI, SE_CLQI, MI_iter)
-#### 
-  #perform complete case analysis
-  complete_case_results <- complete_case(data_for_imp)
-    
-  #perform calculations to get estimate, bias, relative bias, RMSE, coverage, power for CC
-    estimate_values_CC[i] <- complete_case_results[1]
-    SE_values_CC[i] <- complete_case_results[1]
-    
-    t_star <- qt(0.975, df = my_sample - 1)
-    coverage_CC[i] <- coverage(parameter = estimate_values_CC[i],
-                               SE = SE_values_CC[i],
-                               t_star = t_star,
-                               true_val = log(1.1))
-    
-    power_CC[i] <- ifelse(as.numeric(complete_case_results[3]) < 0.05, 1, 0) #if p-val < 0.05, it's 1. Else, it's 0.
-    
+  #Power
+    power_CLQI_1[i] <- power(as.vector(CLQI_results$values_CLQI_1), 
+                             as.vector(CLQI_results$SE_CLQI_1), MI_iter)
+    power_CLQI_2[i] <- power(as.vector(CLQI_results$values_CLQI_2), 
+                             as.vector(CLQI_results$SE_CLQI_2), MI_iter)
+    power_CLQI_3[i] <- power(as.vector(CLQI_results$values_CLQI_3), 
+                             as.vector(CLQI_results$SE_CLQI_3), MI_iter)
+    power_CLQI_4[i] <- power(as.vector(CLQI_results$values_CLQI_4), 
+                             as.vector(CLQI_results$SE_CLQI_4), MI_iter)
+
   #we will be repeating this 1000 times
 }
 tictoc::toc()
 
 #create bias rows
-bias_values_PMM <- estimate_values_PMM - log(1.1)
-bias_values_CLQI <- estimate_values_CLQI - log(1.1)
-bias_values_CC <- estimate_values_CC - log(1.1)
+bias_values_CLQI_1 <- estimate_values_CLQI_1 - log(1.1)
+bias_values_CLQI_2 <- estimate_values_CLQI_2 - log(1.1)
+bias_values_CLQI_3 <- estimate_values_CLQI_3 - log(1.1)
+bias_values_CLQI_4 <- estimate_values_CLQI_4 - log(1.1)
+
 
 #and at the end, combine all these vectors into a single dataframe
 my_simulation_results <- data.frame(
-  estimate_values_PMM = estimate_values_PMM,
-  bias_values_PMM = bias_values_PMM,
-  SE_values_PMM = SE_values_PMM,
-  RMSE_values_PMM = sqrt(bias_values_PMM^2 + SE_values_PMM^2),
-  coverage_PMM = coverage_PMM,
-  power_PMM = power_PMM, #done
-  estimate_values_CLQI = estimate_values_CLQI,
-  bias_values_CLQI = bias_values_CLQI,
-  SE_values_CLQI = SE_values_CLQI,
-  RMSE_values_CLQI = sqrt(bias_values_CLQI^2 + SE_values_CLQI^2),
-  coverage_CLQI = coverage_CLQI,
-  power_CLQI = power_CLQI, #done
-  estimate_values_CC= estimate_values_CC,
-  bias_values_CC= bias_values_CC,
-  SE_values_CC = SE_values_CC,
-  RMSE_values_CC = sqrt(bias_values_CC^2 + SE_values_CC^2),
-  coverage_CC = coverage_CC,
-  power_CC = power_CC
+  estimate_values_CLQI_1 = estimate_values_CLQI_1,
+  bias_values_CLQI_1 = bias_values_CLQI_1,
+  SE_values_CLQI_1 = SE_values_CLQI_1,
+  RMSE_values_CLQI_1 = sqrt(bias_values_CLQI_1^2 + SE_values_CLQI_1^2),
+  coverage_CLQI_1 = coverage_CLQI_1,
+  power_CLQI_1 = power_CLQI_1,
+  
+  estimate_values_CLQI_2 = estimate_values_CLQI_2,
+  bias_values_CLQI_2 = bias_values_CLQI_2,
+  SE_values_CLQI_2 = SE_values_CLQI_2,
+  RMSE_values_CLQI_2 = sqrt(bias_values_CLQI_2^2 + SE_values_CLQI_2^2),
+  coverage_CLQI_2 = coverage_CLQI_2,
+  power_CLQI_2 = power_CLQI_2,
+  
+  estimate_values_CLQI_3 = estimate_values_CLQI_3,
+  bias_values_CLQI_3 = bias_values_CLQI_3,
+  SE_values_CLQI_3 = SE_values_CLQI_3,
+  RMSE_values_CLQI_3 = sqrt(bias_values_CLQI_3^2 + SE_values_CLQI_3^2),
+  coverage_CLQI_3 = coverage_CLQI_3,
+  power_CLQI_3 = power_CLQI_3,
+  
+  estimate_values_CLQI_4 = estimate_values_CLQI_4,
+  bias_values_CLQI_4 = bias_values_CLQI_4,
+  SE_values_CLQI_4 = SE_values_CLQI_4,
+  RMSE_values_CLQI_4 = sqrt(bias_values_CLQI_4^2 + SE_values_CLQI_4^2),
+  coverage_CLQI_4 = coverage_CLQI_4,
+  power_CLQI_4 = power_CLQI_4
 )
 
 my_simulation_results
+saveRDS(my_simulation_results, file="./sensitivity_analysis_30_percent.rds")
 ```
 
 ```{r}
