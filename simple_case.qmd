@@ -44,11 +44,12 @@ inv_log_quant_transform <- function(value, min, max) {
 The Data Generating Mechanism: just one study with a very simple mechanism defined in section 3
 
 ```{r}
-data_generation <- function(sample_size, missing_prop, 
+data_generation <- function(sample_size, missing_prop, p_missing_zero = 0.35, p_missing_one = 0.20,
                             b_0 = logit(0.1), b_1 = log(1.1), b_2 = log(0.7)) {
 
   #generate my data
   B <- rbinom(sample_size, size = 1, prob = 0.4)
+  V <- rnorm(sample_size, mean = 0, sd = 2.5)
   X <- rchisq(sample_size, df = 5 + 3*B) #if B = 1, X ~ chisq(8)
   Y <- plogis(b_0 + b_1*X + b_2*B) #we have some effects
   Y_bin <- rbinom(sample_size, size = 1, prob = Y)
@@ -56,14 +57,26 @@ data_generation <- function(sample_size, missing_prop,
   
   my_data <- data.frame(
       confounder = B,
+      predictor = V,
       biomarker = X,
       missing_biomarker = X,
+      missing_biomarker_MAR = X,
       outcome = Y_bin
     )
-  
+
   my_data <- delete_MCAR(my_data, missing_prop, "missing_biomarker") #make missing_prop percent of data missing MCAR
   
-  #now we create the transformed variable... sapply is NOT working
+#what about the MAR scenario?
+  #get probabilities based on confounder and unif from 0 to 1 for all my datapoints
+  prob <- ifelse(my_data$confounder == 1, p_missing_one, p_missing_zero)
+  u <- runif(nrow(my_data))
+  
+  #apply MAR missingness
+  my_data$missing_biomarker_MAR <- ifelse(u < prob, #if my u value is less than my probability
+                                          NA, #make it missing
+                                          my_data$missing_biomarker_MAR) #if not, keep the observation
+
+#now we create the transformed variable... sapply is NOT working
   my_data$transformed_biomarker <- NA
   
   for(i in 1:nrow(my_data)) {
@@ -105,11 +118,20 @@ ggplot(data = created_data, aes(x = biomarker, fill = confounder, color = confou
   scale_color_manual(values = c("blue", "red"))        # Custom border colors
 ```
 
+A check for MAR working:
+
+```{r, eval=FALSE}
+created_data <- data_generation(sample_size = 2000, missing_prop = 0.5)
+
+
+```
+
+
 # PMM: This is some simple code to demonstrate how PMM works with the `mice` package in R
 
 ```{r, eval=FALSE}
 created_data_for_PMM <- data_generation(sample_size = 2000, missing_prop = 0.4) |>
-  dplyr::select(confounder, missing_biomarker, outcome) #must only have the missing biomarker and the predictors
+  dplyr::select(confounder, missing_biomarker, outcome, predictor) #must only have the missing biomarker and the predictors
 
 set.seed(500)
 num_imp <- 10 #number of imputations
@@ -143,7 +165,7 @@ coefficient_data <- data.frame()
 
 suppressWarnings({
   for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
-      reg_coeff <- rq(transformed_biomarker ~ outcome + confounder, 
+      reg_coeff <- rq(transformed_biomarker ~ outcome + confounder + predictor, 
                       data = created_data, 
                       tau=i)
       
@@ -152,6 +174,7 @@ suppressWarnings({
         b_0 = reg_coeff$coefficients[1],
         b_outcome = reg_coeff$coefficients[2],
         b_confounder = reg_coeff$coefficients[3],
+        b_predictor = reg_coeff$coefficients[4],
         quant = i)
         
       coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
@@ -164,7 +187,7 @@ coefficient_data
 coefficient_generator <- function(my_data) {
   suppressWarnings({
     for(i in seq(from = 0.01, to = 0.99, by = 0.01)) {
-        reg_coeff <- rq(transformed_biomarker ~ outcome + confounder, 
+        reg_coeff <- rq(transformed_biomarker ~ outcome + confounder + predictor, 
                         data = my_data, 
                         tau=i)
         
@@ -173,6 +196,7 @@ coefficient_generator <- function(my_data) {
           b_0 = reg_coeff$coefficients[1],
           b_outcome = reg_coeff$coefficients[2],
           b_confounder = reg_coeff$coefficients[3],
+          b_predictor = reg_coeff$coefficients[4],
           quant = i)
           
         coefficient_data <- rbind(coefficient_data, new_data) #add to new iterations
@@ -205,15 +229,16 @@ imputation_algorithm <- function(my_data, row_index) {
   
   u <- runif(1, min = 0, max = 0.99) 
   
-  reg_coeff <- rq(transformed_biomarker ~ outcome + confounder, 
+  reg_coeff <- rq(transformed_biomarker ~ outcome + confounder + predictor, 
                         data = my_data, 
                         tau = u) #straight up u value
   
   b_intercept <- reg_coeff$coefficients[1]
   b_outcome <- reg_coeff$coefficients[2]
   b_confounder <- reg_coeff$coefficients[3]
+  b_predictor <- reg_coeff$coefficients[4]
   
-  imputation_value_transformed <- b_intercept + (b_outcome * my_data[row_index,]$outcome) + (b_confounder * my_data[row_index,]$confounder)
+  imputation_value_transformed <- b_intercept + (b_outcome * my_data[row_index,]$outcome) + (b_confounder * my_data[row_index,]$confounder) + (b_predictor * my_data[row_index,]$predictor)
   
   return(imputation_value_transformed)
 }
