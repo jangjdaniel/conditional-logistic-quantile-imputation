@@ -563,6 +563,9 @@ ggplot(data = my_simulation_results, aes(x = estimate_values_CLQI_1)) +
 Second setting: with 60% missing data
 
 ```{r}
+#iteration counter so I'm not going insane
+my_iter_count <- 0
+
 #this is to make reading the code much easier
 set.seed(500)
 my_sample <- 1000 #sample size for each dataset
@@ -652,6 +655,8 @@ for(i in 1:num_sim) { #for each simulation
                              as.vector(CLQI_results$SE_CLQI_4), MI_iter)
 
   #we will be repeating this 1000 times
+  my_iter_count <- my_iter_count + 1
+  print(my_iter_count)
 }
 tictoc::toc()
 

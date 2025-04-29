@@ -41,6 +41,23 @@ inv_log_quant_transform <- function(value, min, max) {
 }
 ```
 
+We need the theoretical mixture distribution
+
+```{r}
+#theoretical distribution values we need for transformations (chatgpt makes this quick)
+get_mixture_quantile <- function(p) {
+  uniroot(
+    function(q) 0.6 * pchisq(q, 5) + 0.4 * pchisq(q, 8) - p,
+    c(0, 1000)
+  )$root
+}
+
+# Compute each quantile and assign to unique objects
+q_9999 <- get_mixture_quantile(0.9999)
+q_999999 <- get_mixture_quantile(0.999999)
+```
+
+
 The Data Generating Mechanism: just one study with a very simple mechanism defined in section 3
 
 ```{r}
@@ -84,7 +101,7 @@ data_generation <- function(sample_size, missing_prop, p_missing_zero = 0.35, p_
       my_data$transformed_biomarker[i] <- NA} 
     else {
       my_data$transformed_biomarker[i] <- log_quant_transform(my_data$missing_biomarker[i], 
-                                                              min = 0, max = max(my_data$biomarker, na.rm = TRUE))}
+                                                              min = 0, max = q_999999)}
   }
   
   return(my_data)
@@ -122,10 +139,7 @@ A check for MAR working:
 
 ```{r, eval=FALSE}
 created_data <- data_generation(sample_size = 2000, missing_prop = 0.5)
-
-
 ```
-
 
 # PMM: This is some simple code to demonstrate how PMM works with the `mice` package in R
 
@@ -256,10 +270,10 @@ imputation_algorithm_no_sharing <- function(my_coefficients, my_data, row_index)
   
   #need to calculate regression values... really messy don't look at this
   lower_quantile_value <- floor_quantile$b_0 +
-    (floor_quantile$b_outcome * my_data[row_index,]$outcome) + (floor_quantile$b_confounder * my_data[row_index,]$confounder) 
+    (floor_quantile$b_outcome * my_data[row_index,]$outcome) + (floor_quantile$b_confounder * my_data[row_index,]$confounder) + + (floor_quantile$b_predictor * my_data[row_index,]$predictor) 
 
   upper_quantile_value <- ceiling_quantile$b_0 +
-    (ceiling_quantile$b_outcome * my_data[row_index,]$outcome) + (ceiling_quantile$b_confounder * my_data[row_index,]$confounder)
+    (ceiling_quantile$b_outcome * my_data[row_index,]$outcome) + (ceiling_quantile$b_confounder * my_data[row_index,]$confounder) + (ceiling_quantile$b_predictor * my_data[row_index,]$predictor)
 
   #now the imputation values!
   imputation_value_transformed <- ((1-modulus)*lower_quantile_value) + (modulus*upper_quantile_value)
@@ -273,7 +287,6 @@ imputation_algorithm_no_sharing <- function(my_coefficients, my_data, row_index)
 ```{r, eval=FALSE}
 #here are the data that we need
 data_for_imp <- data_generation(sample_size = 1000, missing_prop = 0.3)
-max(data_for_imp$biomarker, na.rm=TRUE)
 
 for(row_index in 1:nrow(data_for_imp)) {
   if(is.na(data_for_imp$transformed_biomarker[row_index])) {
@@ -286,7 +299,7 @@ for(row_index in 1:nrow(data_for_imp)) {
 
 data_for_imp <- data_for_imp |>
   mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
-                                                  min = 0, max = max(data_for_imp$biomarker, na.rm = TRUE)))
+                                                  min = 0, max = q_999999))
 
 data_for_imp #check the transformed_biomarker variable, not the missing_biomarker variable!
 ```
@@ -518,7 +531,7 @@ for(imp in 1:MI_iter) {
   
   data_for_imp <- data_for_imp |>
   mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
-                                                  min = 0, max = max(data_for_imp$biomarker, na.rm = TRUE)))
+                                                  min = 0, max = q_999999))
 
   my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
               data = data_for_imp,
@@ -572,7 +585,7 @@ CLQI <- function(my_data, num_MI_iter) {
   #after running the algorithm, we untransform, perform log reg, save coefficients, rinse and repeat
   my_data_iteration <- my_data_iteration |>
   mutate(untransformed_imputed_biomarker = sapply(transformed_biomarker, inv_log_quant_transform, 
-                                                  min = 0, max = max(my_data_iteration$biomarker, na.rm = TRUE)))
+                                                  min = 0, max = q_999999))
 
   my_glm <- glm(outcome ~ untransformed_imputed_biomarker + confounder,
               data = my_data_iteration,
@@ -616,6 +629,8 @@ c[1] #the estimate
 # MY INITIAL SIMULATION STUDY
 
 ```{r}
+my_iter_count <- 0
+
 #this is to make reading the code much easier
 set.seed(500)
 my_sample <- 1000 #sample size for each dataset
@@ -698,6 +713,8 @@ for(i in 1:num_sim) { #for each simulation
     power_CC[i] <- ifelse(as.numeric(complete_case_results[3]) < 0.05, 1, 0) #if p-val < 0.05, it's 1. Else, it's 0.
     
   #we will be repeating this 1000 times
+  my_iter_count <- my_iter_count + 1
+  print(my_iter_count)
 }
 tictoc::toc()
 
@@ -707,7 +724,7 @@ bias_values_CLQI <- estimate_values_CLQI - log(1.1)
 bias_values_CC <- estimate_values_CC - log(1.1)
 
 #and at the end, combine all these vectors into a single dataframe
-my_simulation_results <- data.frame(
+my_simulation_results_q_999999 <- data.frame(
   estimate_values_PMM = estimate_values_PMM,
   bias_values_PMM = bias_values_PMM,
   SE_values_PMM = SE_values_PMM,
@@ -728,24 +745,32 @@ my_simulation_results <- data.frame(
   power_CC = power_CC
 )
 
-my_simulation_results
+my_simulation_results_q_999999
 ```
 
 ```{r}
 #quick bias checks
-mean(my_simulation_results$estimate_values_CLQI) - log(1.1)
-mean(my_simulation_results$estimate_values_PMM) - log(1.1)
+mean(my_simulation_results_q_999999$estimate_values_CLQI) - log(1.1)
+mean(my_simulation_results_q_999999$estimate_values_PMM) - log(1.1)
+mean(my_simulation_results_q_999999$estimate_values_CC) - log(1.1)
+
+#now for RMSE
+mean(my_simulation_results_q_999999$RMSE_values_CLQI)
+mean(my_simulation_results_q_999999$RMSE_values_PMM)
+mean(my_simulation_results_q_999999$RMSE_values_CC)
 
 #now for coverage
-mean(my_simulation_results$coverage_CLQI)
-mean(my_simulation_results$coverage_PMM)
+mean(my_simulation_results_q_999999$coverage_CLQI)
+mean(my_simulation_results_q_999999$coverage_PMM)
+mean(my_simulation_results_q_999999$coverage_CC)
 
 #now for power
-mean(my_simulation_results$power_CLQI)
-mean(my_simulation_results$power_PMM)
+mean(my_simulation_results_q_999999$power_CLQI)
+mean(my_simulation_results_q_999999$power_PMM)
+mean(my_simulation_results_q_999999$power_CC)
 
 #save this!
-saveRDS(my_simulation_results, file="./simulations.rds")
+saveRDS(my_simulation_results_q_999999, file="./simulations_setting4.rds")
 ```
 
 Now a check!
