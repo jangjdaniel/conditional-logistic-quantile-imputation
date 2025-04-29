@@ -749,10 +749,10 @@ my_simulation_results_q_999999
 ```
 
 ```{r}
-#quick bias checks
-mean(my_simulation_results_q_999999$estimate_values_CLQI) - log(1.1)
-mean(my_simulation_results_q_999999$estimate_values_PMM) - log(1.1)
-mean(my_simulation_results_q_999999$estimate_values_CC) - log(1.1)
+#quick bias checks 
+(mean(my_simulation_results_q_999999$estimate_values_CLQI) - log(1.1)) / log(1.1) * 100
+(mean(my_simulation_results_q_999999$estimate_values_PMM) - log(1.1)) / log(1.1) * 100
+(mean(my_simulation_results_q_999999$estimate_values_CC) - log(1.1)) / log(1.1) * 100
 
 #now for RMSE
 mean(my_simulation_results_q_999999$RMSE_values_CLQI)
@@ -772,6 +772,169 @@ mean(my_simulation_results_q_999999$power_CC)
 #save this!
 saveRDS(my_simulation_results_q_999999, file="./simulations_setting4.rds")
 ```
+
+
+
+# A SECOND ONE WITH 60 PERCENT
+
+# MY INITIAL SIMULATION STUDY
+
+```{r}
+my_iter_count <- 0
+
+#this is to make reading the code much easier
+set.seed(500)
+my_sample <- 1000 #sample size for each dataset
+num_sim <- 1000 #number of simulations
+MI_iter <- 10
+prop_data_missing <- 0.6 #proportion of data missing
+
+#here are some vectors we have to define... this is still messy since it's not in a full function
+estimate_values_PMM <- c()
+SE_values_PMM <- c()
+coverage_PMM <- c()
+power_PMM <- c()
+
+estimate_values_CLQI <- c()
+SE_values_CLQI <- c()
+coverage_CLQI <- c()
+power_CLQI <- c()
+
+estimate_values_CC <- c()
+SE_values_CC <- c()
+coverage_CC <- c()
+power_CC <- c()
+
+#now for our loop
+tictoc::tic() #check runtime for entire simulation
+for(i in 1:num_sim) { #for each simulation
+  data_for_imp <- data_generation(sample_size = my_sample, 
+                                  missing_prop = prop_data_missing) #generate my data
+  
+  #get values for estimate and SE from PMM
+  data_for_imp_PMM <- data_for_imp  |>
+    dplyr::select(confounder, missing_biomarker, outcome)
+  
+  PMM_results <- PMM(data_for_imp_PMM, num_MI_iter = MI_iter) #1 is estimates, 2 is SE
+    values_PMM <- as.vector(PMM_results[[1]])
+    SE_PMM <- as.vector(PMM_results[[2]])
+  
+  #perform calculations to get estimate, bias, relative bias, RMSE, coverage, power for PMM
+      estimate_values_PMM[i] <- mean(values_PMM)
+      SE_values_PMM[i] <- rubin_rule_SE(values_PMM, SE_PMM)
+      
+      t_star <- qt(0.975, df = my_sample - 1)
+      coverage_PMM[i] <- coverage(parameter = estimate_values_PMM[i],
+                                  SE = SE_values_PMM[i],
+                                  t_star = t_star,
+                                  true_val = log(1.1))
+      
+      power_PMM[i] <- power(values_PMM, SE_PMM, MI_iter)
+####
+  #get values for estimate and SE from CLQI
+  CLQI_results <- CLQI(data_for_imp, num_MI_iter = MI_iter) #1 is estimates, 2 is SE
+    values_CLQI <- as.vector(CLQI_results[[1]])
+    SE_CLQI <- as.vector(CLQI_results[[2]])
+
+  #perform calculations to get estimate, bias, relative bias, RMSE, coverage, power for CLQI
+      estimate_values_CLQI[i] <- mean(values_CLQI)
+      SE_values_CLQI[i] <- rubin_rule_SE(values_CLQI, SE_CLQI)
+      
+      t_star <- qt(0.975, df = my_sample - 1)
+      coverage_CLQI[i] <- coverage(parameter = estimate_values_CLQI[i],
+                                   SE = SE_values_CLQI[i],
+                                   t_star = t_star,
+                                   true_val = log(1.1))
+      
+      power_CLQI[i] <- power(values_CLQI, SE_CLQI, MI_iter)
+#### 
+  #perform complete case analysis
+  complete_case_results <- complete_case(data_for_imp)
+    
+  #perform calculations to get estimate, bias, relative bias, RMSE, coverage, power for CC
+    estimate_values_CC[i] <- complete_case_results[1]
+    SE_values_CC[i] <- complete_case_results[1]
+    
+    t_star <- qt(0.975, df = my_sample - 1)
+    coverage_CC[i] <- coverage(parameter = estimate_values_CC[i],
+                               SE = SE_values_CC[i],
+                               t_star = t_star,
+                               true_val = log(1.1))
+    
+    power_CC[i] <- ifelse(as.numeric(complete_case_results[3]) < 0.05, 1, 0) #if p-val < 0.05, it's 1. Else, it's 0.
+    
+  #we will be repeating this 1000 times
+  my_iter_count <- my_iter_count + 1
+  print(my_iter_count)
+}
+tictoc::toc()
+
+#create bias rows
+bias_values_PMM <- estimate_values_PMM - log(1.1)
+bias_values_CLQI <- estimate_values_CLQI - log(1.1)
+bias_values_CC <- estimate_values_CC - log(1.1)
+
+#and at the end, combine all these vectors into a single dataframe
+my_simulation_results_60 <- data.frame(
+  estimate_values_PMM = estimate_values_PMM,
+  bias_values_PMM = bias_values_PMM,
+  SE_values_PMM = SE_values_PMM,
+  RMSE_values_PMM = sqrt(bias_values_PMM^2 + SE_values_PMM^2),
+  coverage_PMM = coverage_PMM,
+  power_PMM = power_PMM, #done
+  estimate_values_CLQI = estimate_values_CLQI,
+  bias_values_CLQI = bias_values_CLQI,
+  SE_values_CLQI = SE_values_CLQI,
+  RMSE_values_CLQI = sqrt(bias_values_CLQI^2 + SE_values_CLQI^2),
+  coverage_CLQI = coverage_CLQI,
+  power_CLQI = power_CLQI, #done
+  estimate_values_CC= estimate_values_CC,
+  bias_values_CC= bias_values_CC,
+  SE_values_CC = SE_values_CC,
+  RMSE_values_CC = sqrt(bias_values_CC^2 + SE_values_CC^2),
+  coverage_CC = coverage_CC,
+  power_CC = power_CC
+)
+
+my_simulation_results_60
+```
+
+```{r}
+#quick bias checks 
+(mean(my_simulation_results_60$estimate_values_CLQI) - log(1.1)) / log(1.1) * 100
+(mean(my_simulation_results_60$estimate_values_PMM) - log(1.1)) / log(1.1) * 100
+(mean(my_simulation_results_60$estimate_values_CC) - log(1.1)) / log(1.1) * 100
+
+#now for RMSE
+mean(my_simulation_results_60$RMSE_values_CLQI)
+mean(my_simulation_results_60$RMSE_values_PMM)
+mean(my_simulation_results_60$RMSE_values_CC)
+
+#now for coverage
+mean(my_simulation_results_60$coverage_CLQI)
+mean(my_simulation_results_60$coverage_PMM)
+mean(my_simulation_results_60$coverage_CC)
+
+#now for power
+mean(my_simulation_results_60$power_CLQI)
+mean(my_simulation_results_60$power_PMM)
+mean(my_simulation_results_60$power_CC)
+
+#save this!
+saveRDS(my_simulation_results_60, file="./simulations_setting_60_perc.rds")
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 Now a check!
 
