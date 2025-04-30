@@ -786,7 +786,7 @@ my_iter_count <- 0
 set.seed(500)
 my_sample <- 1000 #sample size for each dataset
 num_sim <- 1000 #number of simulations
-MI_iter <- 10
+MI_iter <- 25
 prop_data_missing <- 0.6 #proportion of data missing
 
 #here are some vectors we have to define... this is still messy since it's not in a full function
