@@ -932,10 +932,6 @@ saveRDS(my_simulation_results_60, file="./simulations_setting_60_perc.rds")
 
 
 
-
-
-
-
 Now a check!
 
 ```{r}
@@ -958,7 +954,6 @@ ggplot(sim_setting_long, aes(x = value, color = method, fill = method)) +
 ```
 
 #################################################################################
-*I remember from STAT 495 that there was a cost vs power formula that we can use*
 
 ```{r}
 # Plot histogram of your biomarker data
