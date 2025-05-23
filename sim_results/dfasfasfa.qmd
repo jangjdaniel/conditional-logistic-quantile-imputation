@@ -1,9 +1,0 @@
-```{r}
-simulations_setting2 <- simulations_setting2
-simulations_setting4 <- simulations_setting4
-
-simulations
-
-mean(simulations$RMSE_values_CLQI)
-```
-
