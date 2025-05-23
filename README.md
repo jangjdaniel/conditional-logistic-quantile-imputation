@@ -1,7 +1,5 @@
-# Conditional Logistic Quantile Regression
+# Conditional Logistic Quantile Imputation (CLQI)
 
-Motivation:
+Biomarkers are often expensive and difficult to measure. This can be especially problematic in clinical trials, where financial restraints could result in not enough data being collected or having to skip some patients's data collection. Furthermore, Biomarkers are often continuous and bounded with moderate to heavy skew, making existing MI methods not ideal when some biomarker data are missing. Instead of doing a complete case analysis or scrapping the experiment altogether, Conditional Logistic Quantile Imputation (CLQI) can be used so that we are able to perform the desired analysis while maintaining low type I error rates and increased power. CLQI combines ideas from both Conditional Quantile Imputation (CQI) and Logistic Quantile Regression (LQR).
 
-Biomarkers are often continuous and bounded variables that are expensive to measure. This can be especially problematic in clinical trials where financial restraints could result in not enough data being collected, or having to skip some patients's data collection. Instead of doing a complete case analysis or scrapping the experiment altogether, Conditional Logistic Quantile Imputation (CLQI) can be used so that we are able to perform the desired analysis without the loss of data. 
-
-After introducing CLQI in this simple case, we will show how CLQI can handle limit-of-detection / left-censored / limited-range data with a few modifications. This proves the method to be flexible in imputing different types of missingness, but also meets the demands of researchers. 
+This repo contains the sensitivity analysis, imputation quality analysis, and simulation study for exploring the performance of CLQI. Code for a subsequent R package is currently in development.
