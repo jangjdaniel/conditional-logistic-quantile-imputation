@@ -939,15 +939,22 @@ saveRDS(my_simulation_results_60, file="./simulations_setting_60_perc.rds")
 Now a check!
 
 ```{r}
-simulation_setting <- readRDS(file="./simulations.rds")
+simulation_setting_30_perc <- readRDS(file="./sim_results/simulations_setting4.rds")
 
-ggplot(data = simulation_setting, aes(x = estimate_values_CLQI)) +
-  geom_density() +
-  geom_vline(xintercept = log(1.1))
-
-ggplot(data = simulation_setting, aes(x = estimate_values_PMM)) +
-  geom_density() +
-  geom_vline(xintercept = log(1.1))
+sim_setting_long <- simulation_setting_30_perc |>
+  dplyr::select(estimate_values_CLQI, estimate_values_PMM) |>
+  rename(CLQI = estimate_values_CLQI, PMM = estimate_values_PMM) |> #rename so i don't have to do weird legend things
+  pivot_longer(cols = everything(),
+               names_to = "method",
+               values_to = "value")
+#my ggplot!
+ggplot(sim_setting_long, aes(x = value, color = method, fill = method)) +
+  geom_density(alpha = 0.2) +
+  geom_vline(xintercept = log(1.1), linetype = "dashed", color = "black") +
+  labs(title = "Density Plot of Estimates", 
+       x = "Estimate Value", 
+       y = "Density") + 
+  theme(text = element_text(size = 13))
 ```
 
 #################################################################################
