@@ -705,27 +705,25 @@ tictoc::toc()
 
 ```{r}
 #quick bias checks 
-(mean(my_simulation_results_q_999999$estimate_values_CLQI) - true_effect) / true_effect * 100
-(mean(my_simulation_results_q_999999$estimate_values_PMM) - true_effect) / true_effect * 100
-(mean(my_simulation_results_q_999999$estimate_values_CC) - true_effect) / true_effect * 100
+(mean(simulation_study_setting_1$estimate_values_CLQI) - true_effect) / true_effect * 100
+(mean(simulation_study_setting_1$estimate_values_PMM) - true_effect) / true_effect * 100
+(mean(simulation_study_setting_1$estimate_values_CC) - true_effect) / true_effect * 100
 
 #now for RMSE
-mean(my_simulation_results_q_999999$RMSE_values_CLQI)
-mean(my_simulation_results_q_999999$RMSE_values_PMM)
-mean(my_simulation_results_q_999999$RMSE_values_CC)
+mean(simulation_study_setting_1$RMSE_values_CLQI)
+mean(simulation_study_setting_1$RMSE_values_PMM)
+mean(simulation_study_setting_1$RMSE_values_CC)
 
 #now for coverage
-mean(my_simulation_results_q_999999$coverage_CLQI)
-mean(my_simulation_results_q_999999$coverage_PMM)
-mean(my_simulation_results_q_999999$coverage_CC)
+mean(simulation_study_setting_1$coverage_CLQI)
+mean(simulation_study_setting_1$coverage_PMM)
+mean(simulation_study_setting_1$coverage_CC)
 
 #now for power
-mean(my_simulation_results_q_999999$power_CLQI)
-mean(my_simulation_results_q_999999$power_PMM)
-mean(my_simulation_results_q_999999$power_CC)
+mean(simulation_study_setting_1$power_CLQI)
+mean(simulation_study_setting_1$power_PMM)
+mean(simulation_study_setting_1$power_CC)
 
 #save this!
-saveRDS(my_simulation_results_q_999999, file="./simulation_study_setting_1.rds")
+saveRDS(simulation_study_setting_1, file="./simulation_study_setting_1.rds")
 ```
-
-Everything is sad!!!
