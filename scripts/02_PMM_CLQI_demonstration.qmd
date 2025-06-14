@@ -23,6 +23,7 @@ generated_data_for_testing <- data_generating_mechanism(my_sample = my_sample,
 # Predictive Mean Matching
 
 Before we introduce the function for our implementation, we will go through how the `mice` package works here
+- By default, there are *5 pmm neighbors*, which may not be good for lower sample sizes
 
 ```{r, eval=FALSE}
 # mice requires the dataframe to only contain missing variable and its predictors

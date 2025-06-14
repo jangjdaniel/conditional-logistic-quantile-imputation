@@ -1,0 +1,25 @@
+
+This qmd defines the functions that we will be using for our simulation study and example implementations with our generated data from the previous scripts
+
+Before that, we need to perform *Rubin Rules* to aggregate all important information!
+This will be incorporated in these functions, as they take in the list of regression coefficients from `02` functions
+
+# Performance Measure Functions
+
+## `bias`
+
+## `empirical_SE`
+
+## `RMSE`
+
+## `model_based_SE`
+
+## `coverage`
+
+## `power`
+
+## `rel_efficiency`
+
+# Monte Carlo Testing for sufficient simulations (N)
+
+# `MCSE` is the function for calculating Monte Carlo Standard Error
