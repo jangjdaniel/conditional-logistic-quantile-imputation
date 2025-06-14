@@ -20,6 +20,15 @@ strong_effects <- c(logit(0.1), log(1.5), log(0.7), log(0.85))
 q_999999 <- get_mixture_quantile(0.999999)
 ```
 
+*These are the formulas for use in logistic regression for our simulation study*
+
+```{r}
+#in general, to check the true logistic regression for the data before missingness, we need this
+formula_biomarker <- "outcome ~ biomarker + confounder + predictor"
+formula_biomarker_MCAR <- "outcome ~ biomarker_MCAR + confounder + predictor"
+formula_biomarker_MAR <- "outcome ~ biomarker_MAR + confounder + predictor"
+```
+
 # `data_generator` is a function that generates our data, full stop. Nothing too fancy
 >> Any modifications to the DGM will need to happen in this function, such as changing probabilities or sd
 - sample_size is the sample size of the data
@@ -66,7 +75,7 @@ Test case: make sure that the data generates correctly, as well as get our coeff
 weak_effects_data <- data_generator(my_sample, weak_effects)
 
 # Run LOGISTIC regression: isn't good...
-glm(outcome ~ biomarker + confounder + predictor,
+glm(as.formula(formula_biomarker),
     data = weak_effects_data,
     family = "binomial") |>
   tbl_regression(exponentiate = TRUE)
@@ -79,7 +88,7 @@ glm(outcome ~ biomarker + confounder + predictor,
 strong_effects_data <- data_generator(my_sample, strong_effects)
 
 # Run LOGISTIC regression
-glm(outcome ~ biomarker + confounder + predictor,
+glm(as.formula(formula_biomarker),
     data = strong_effects_data,
     family = "binomial") |>
   tbl_regression(exponentiate = TRUE)
@@ -177,12 +186,12 @@ DGM_weak <- data_generating_mechanism(my_sample = my_sample,
                                       max_val = q_999999)
 
 # With biomarker data
-summary(glm(outcome ~ biomarker + confounder + predictor, 
+summary(glm(as.formula(formula_biomarker), 
             data = DGM_weak,
             family = "binomial"))
 
 # With MCAR biomarker data: 95% CI will be wider
-summary(glm(outcome ~ biomarker_MCAR + confounder + predictor, 
+summary(glm(as.formula(formula_biomarker), 
             data = DGM_weak,
             family = "binomial")) 
 ```
@@ -198,16 +207,38 @@ DGM_strong <- data_generating_mechanism(my_sample = my_sample,
                                         max_val = q_999999)
 
 # With biomarker data
-glm(outcome ~ biomarker + confounder + predictor, 
+glm(as.formula(formula_biomarker), 
     data = DGM_strong,
     family = "binomial") |>
   broom::tidy()
 
 # With MCAR biomarker data: 95% CI will be wider
-glm(outcome ~ biomarker_MCAR + confounder + predictor, 
+glm(as.formula(formula_biomarker), 
     data = DGM_strong,
     family = "binomial") |>
   broom::tidy()
+```
+
+# Visualization for example: Just in case we need a visual of the distribution (AI generated)
+
+```{r}
+DGM_weak <- data_generating_mechanism(my_sample = my_sample,
+                                      beta_coefficients = weak_effects,
+                                      prop_missing_MCAR = 0.3,
+                                      min_val = 0,
+                                      max_val = q_999999)
+
+#this is just some chatgpt code for a quick check
+DGM_weak$confounder <- factor(DGM_weak$confounder, levels = c(0, 1), labels = c("Confounder = 0", "Confounder = 1"))
+
+# Create the plot with overlaid density curves
+ggplot(data = DGM_weak, aes(x = biomarker, fill = confounder, color = confounder)) +
+  geom_density(alpha = 0.5) + 
+  labs(title = "Biomarker Distribution by Confounder",
+       x = "Biomarker",
+       y = "Density") +
+  scale_fill_manual(values = c("skyblue", "orange")) +  # Custom colors for filling
+  scale_color_manual(values = c("blue", "red"))        # Custom border colors
 ```
 
 # Remove, including all objects made from test cases
