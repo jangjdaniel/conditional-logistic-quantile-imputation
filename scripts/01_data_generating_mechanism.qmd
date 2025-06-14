@@ -1,0 +1,146 @@
+
+This qmd houses the data generating mechanism used for our simulation study
+This will involve various functions to make things run smoothly in `04 - simulation study`
+The philosophy over this project is that it has a lot of moving parts, so breaking things down to simpler problems is the name of the game
+
+Before we start, we will define some values we will use for test cases throughout the study.
+*These must be run for any test cases to work*. However, ONLY this needs to be run for test cases
+
+```{r}
+set.seed(625)
+
+my_sample <- 100000
+weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
+large_effects <- c(logit(0.1), log(1.5), log(0.7), log(0.85))
+```
+
+# `data_generator` is a function that generates our data, full stop. Nothing too fancy
+>> Any modifications to the DGM will need to happen in this function, such as changing probabilities or sd
+- sample_size is the sample size of the data
+- coefficient_vector are the coefficients that we use to generate relationships between variables
+>> That means we need to pass in a vector of size 4, which is specific to our study
+
+```{r}
+data_generator <- function(sample_size, coefficient_vector) {
+  
+  # Extract coefficients from the coefficient vector *b*
+  b_0 <- coefficient_vector[1]
+  b_1 <- coefficient_vector[2]
+  b_2 <- coefficient_vector[3]
+  b_3 <- coefficient_vector[4]
+  
+  # Generate values from distributions
+  confounder <- rbinom(sample_size, size = 1, prob = 0.4) #prob of success is 0.4
+  predictor <- rnorm(sample_size, mean = 0, sd = 1) #this is our continuous predictor
+  biomarker <- rchisq(sample_size, df = 5 + 3*confounder) #if B = 1, X ~ chisq(8). else, X ~ chisq(5)
+  
+  # Generate the outcome
+  outcome <- plogis(b_0 + b_1*biomarker + b_2*confounder + b_3*predictor) 
+  outcome_binary <- rbinom(sample_size, size = 1, prob = outcome)
+  
+  # Into the dataframe
+  my_data <- data.frame(
+      confounder = confounder,
+      predictor = predictor,
+      biomarker = biomarker,
+      outcome = outcome,
+      outcome_binary = outcome_binary
+    )
+
+  # Get our data
+  return(my_data)
+}
+```
+
+Test case: make sure that the data generates correctly, as well as get our coefficients
+
+> Case 1: Potential Caveat
+
+```{r, eval=FALSE}
+# Generate data
+weak_effects_data <- data_generator(my_sample, weak_effects)
+
+# Run regression: isn't good...
+glm(outcome ~ biomarker + confounder + predictor,
+    data = weak_effects_data) |>
+  tbl_regression(exponentiate = TRUE)
+
+# Run regression with transformation
+glm(outcome ~ log(biomarker) + confounder + predictor,
+    data = weak_effects_data) |>
+  tbl_regression(exponentiate = TRUE)
+```
+
+> Case 2: Success
+
+```{r, eval=FALSE}
+# Generate data
+large_effects_data <- data_generator(my_sample, large_effects)
+
+# Run regression
+glm(outcome ~ biomarker + confounder + predictor,
+    data = large_effects_data) |>
+  tbl_regression(exponentiate = TRUE)
+```
+
+>> Remove things
+
+```{r}
+
+```
+
+
+
+# `missing_generator` is a function that induces missingness. 
+
+
+
+```{r}
+data_generation <- function(sample_size, missing_prop, 
+                            p_missing_zero = 0.35, p_missing_one = 0.20,
+                            b_0 = logit(0.1), b_1 = log(1.1), b_2 = log(0.7),  b_3 = log(0.85)) {
+
+  #generate my data
+  B <- rbinom(sample_size, size = 1, prob = 0.4)
+  V <- rnorm(sample_size, mean = 0, sd = 1) #this is our predictor
+  X <- rchisq(sample_size, df = 5 + 3*B) #if B = 1, X ~ chisq(8)
+  Y <- plogis(b_0 + b_1*X + b_2*B + b_3*V) #we have some effects
+  Y_bin <- rbinom(sample_size, size = 1, prob = Y)
+  
+  #taking all these elements and putting them into a data frame
+  my_data <- data.frame(
+      confounder = B,
+      predictor = V,
+      biomarker = X,
+      missing_biomarker = X,
+      missing_biomarker_MAR = X,
+      outcome = Y_bin
+    )
+
+  #make missing_prop percent of data missing MCAR
+  my_data <- delete_MCAR(my_data, missing_prop, "missing_biomarker") 
+  
+#what about the MAR scenario?
+  #get probabilities based on confounder and unif from 0 to 1 for all my datapoints
+  prob <- ifelse(my_data$confounder == 1, p_missing_one, p_missing_zero)
+  u <- runif(nrow(my_data))
+  
+  #apply MAR missingness
+  my_data$missing_biomarker_MAR <- ifelse(u < prob, #if my u value is less than my probability
+                                          NA, #make it missing
+                                          my_data$missing_biomarker_MAR) #if not, keep the observation
+
+#now we create the transformed variable... sapply is NOT working
+  my_data$transformed_biomarker <- NA
+  
+  for(i in 1:nrow(my_data)) {
+    if(is.na(my_data$missing_biomarker[i])) {
+      my_data$transformed_biomarker[i] <- NA} 
+    else {
+      my_data$transformed_biomarker[i] <- log_quant_transform(my_data$missing_biomarker[i], 
+                                                              min = 0, max = q_999999)}
+  }
+  
+  return(my_data)
+}
+```
