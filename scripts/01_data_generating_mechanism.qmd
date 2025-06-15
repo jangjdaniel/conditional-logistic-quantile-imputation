@@ -98,6 +98,7 @@ glm(as.formula(formula_biomarker),
 It creates two variants of the `biomarker` variable
 - biomarker_MAR: biomarker missing at random
 - biomarker_MCAR: biomarker missing completely at random
+- It also adds a row index, which will be useful later
 
 *MAR is not implemented
 
@@ -115,6 +116,11 @@ missing_generator <- function(my_data, missing_prop_for_MCAR) {
                                       "biomarker_MCAR") #name of variable you want to do this
   
   # MAR:
+  
+  
+  # Add a row index 
+  my_data <- my_data |>
+    mutate(row_index = row_number())
   
   return(my_data)
 }
@@ -245,7 +251,6 @@ ggplot(data = DGM_weak, aes(x = biomarker, fill = confounder, color = confounder
 
 ```{r}
 rm(my_sample)
-rm(q_999999)
 
 # weak
 rm(weak_effects)

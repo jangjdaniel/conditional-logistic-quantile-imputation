@@ -90,7 +90,7 @@ tictoc::toc()
 PMM_regression_results
 ```
 
-`PMM` is the function that returns a *list of regression results* after applying the algorithm
+## `PMM` is the function that returns a *list of regression results* after applying the algorithm
 - Prior to applying the function, you must filter the data to the bare essentials, then use the correct formula text for the regression to run correctly. Purrr is used to make sure this doesn't take forever
 - I will be adding a suppress message to the mice function
 
@@ -164,9 +164,252 @@ PMM(my_data_filtered = generated_data_MAR,
 
 # Conditional Logistic Quantile Imputation (CLQI)
 
-Same idea: we're going to demonstrate how CLQI works, then provide a function that combines everything
+Same idea: we're going to demonstrate how CLQI works, then provide a function that combines everything. 
+But first, here is an example on how quantile regression works
 
 ```{r}
+# quantile regression!
+reg_coeff <- quantreg::rq(biomarker_MCAR_transformed ~ outcome + confounder + predictor, 
+                          data = generated_data_for_testing, 
+                          tau = 0.50) |> #50th quantile
+  tidy()
 
+# and here is a way to easily extract regression coefficients
+# example of intercept estimate!
+reg_coeff |> filter(term == "(Intercept)") |> pull(estimate) #we only care about the estimate
+```
+
+## `logistic_quantile_imputation` is a function that performs the imputation for each row index
+- Note that generating a quantile regression each time is not efficient, but for small scale settings, it's okay
+- The reason I coded this to be individual is because R would vectorize my draw from the uniform distribution
+
+- This function returns the transformed imputed value!
+
+```{r}
+logistic_quantile_imputation <- function(my_data, transformed_imputation_relationship, row_index) {
+  
+  # Step 1) generate a random uniform value
+  u <- runif(1, min = 0, max = 0.99) 
+  
+  # Step 2) perform quantile regression with the uth quantile
+  reg_coeff <- quantreg::rq(as.formula(transformed_imputation_relationship), 
+                            data = my_data, 
+                            tau = u) |> #the uth quantile for regression
+    broom::tidy() #turn this into a dataframe
+  
+  # save all regression coefficients
+  b_intercept <-  reg_coeff |> filter(term == "(Intercept)") |> pull(estimate)
+  b_outcome <-    reg_coeff |> filter(term == "outcome") |> pull(estimate)
+  b_confounder <- reg_coeff |> filter(term == "confounder") |> pull(estimate)
+  b_predictor <-  reg_coeff |> filter(term == "predictor") |> pull(estimate)
+  
+  #predicted imputed value (which is in its transformed state)
+  imputation_value_transformed <- b_intercept + (b_outcome * my_data[row_index,]$outcome) + (b_confounder * my_data[row_index,]$confounder) + (b_predictor * my_data[row_index,]$predictor)
+  
+  #return imputed value in its transformed state
+  return(imputation_value_transformed)
+}
+```
+
+One way we can implement the algorithm: sadly cannot vectorize due to the uniform distribution
+- The reason there is a for loop is purely for readability, as this is quite dense
+
+```{r, eval=FALSE}
+tictoc::tic()
+
+my_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
+
+generated_data_for_testing <- generated_data_for_testing |>
+  mutate(biomarker_MCAR_transformed_CLQI = biomarker_MCAR_transformed) #create another copy to impute and compare
+
+# Perform the algorithm
+for(row_index in 1:nrow(generated_data_for_testing)) { #for all indicies
+  if(is.na(generated_data_for_testing$biomarker_MCAR_transformed[row_index])) { #if the cell in the vector is empty
+      
+      imputed_value <- logistic_quantile_imputation(my_data = generated_data_for_testing, #implement algorithm
+                                            transformed_imputation_relationship = my_formula,
+                                            row_index = row_index)
+      
+      generated_data_for_testing$biomarker_MCAR_transformed_CLQI[row_index] <- imputed_value #and apply it
+  }
+  else {
+      generated_data_for_testing$biomarker_MCAR_transformed_CLQI[row_index] <- #if it has a value
+        generated_data_for_testing$biomarker_MCAR_transformed[row_index] # don't change anything
+    
+  }
+}
+
+# Step 4) Sanity check
+generated_data_for_testing |>
+  dplyr::select(biomarker_MCAR_transformed, biomarker_MCAR_transformed_CLQI) |>
+  mutate(diff = biomarker_MCAR_transformed_CLQI - biomarker_MCAR_transformed)
+
+hist(generated_data_for_testing$biomarker_MCAR_transformed_CLQI)
+
+tictoc::toc()
+```
+
+## `implement_logistic_quantile_imputation` is a function that implements `logistic_quantile_imputation` in a seemless way based on code before
+- This is still one layer from actual full implementation
+
+```{r}
+implement_logistic_quantile_imputation <- function(my_data, transformed_imputation_relationship, var_for_imp,
+                                                   min_val = 0, max_val) {
+  # Convert var_for_imp to a symbol for tidy evaluation
+  var_sym <- sym(var_for_imp)
+  imputed_var_name <- paste0(var_for_imp, "_CLQI")
+
+  # next, create that variable name to perform our operation  
+  my_data <- my_data |>
+    mutate(!!sym(imputed_var_name) := NA_real_)
+  
+  # Perform the algorithm
+  for(row_index in 1:nrow(my_data)) { #for all indicies
+    if(is.na(my_data[[var_for_imp]][row_index])) { #if the cell in the vector for the variable for imputation is empty
+        
+        imputed_value <- logistic_quantile_imputation( #implement algorithm
+          my_data = my_data, 
+          transformed_imputation_relationship = transformed_imputation_relationship,
+          row_index = row_index)
+        
+        # then impute it!
+        my_data[[imputed_var_name]][row_index] <- imputed_value
+    }
+    else { # or just assign the regular value
+        my_data[[imputed_var_name]][row_index] <- my_data[[var_for_imp]][row_index]
+    }
+  }
+  
+  # Don't forget to UNTRANSFORM this new variable
+  my_data <- my_data |>
+    mutate(!!sym(imputed_var_name) := sapply(!!sym(imputed_var_name), #same name
+                                             inv_log_quant_transform, #perform the inverse log transform
+                                             min = min_val, max = max_val))
+
+  return(my_data)
+}
+```
+
+> Test Case: make sure that the transformed value is good
+> This is also to check imputation quality!
+
+```{r, eval=FALSE}
+my_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
+generated_data_for_CLQI <- implement_logistic_quantile_imputation(generated_data_for_testing, 
+                                                                  my_formula, 
+                                                                  "biomarker_MCAR_transformed",
+                                                                  min_val = 0,
+                                                                  max_val = q_999999)
+# mutating to see what happened
+generated_data_for_CLQI <- generated_data_for_CLQI |>
+  dplyr::select(biomarker_transformed, biomarker_MCAR_transformed, biomarker_MCAR_transformed_CLQI) |>
+  mutate(diff = biomarker_MCAR_transformed_CLQI - biomarker_MCAR_transformed)
+
+# this should be zero
+sum(generated_data_for_CLQI$diff, na.rm=TRUE)
+```
+
+Visualization based on test case: *NOT FINISHED*
+
+```{r, eval=FALSE}
+# visualize what the imputed biomarker distributions look like
+ggplot(data = generated_data_for_CLQI, aes(x = biomarker_MCAR_transformed_CLQI)) +
+  geom_density()
+
+ggplot(data = generated_data_for_CLQI, aes(x = biomarker_MCAR_transformed)) +
+  geom_density()
+
+ggplot(data = generated_data_for_CLQI, aes(x = biomarker_transformed)) +
+  geom_density()
+```
+
+Lastly, `CLQI`, like `PMM` fully implements CLQI by creating a list of *m* dataframes of logistic regression results
+- Recall that *correct_formula* must include the suffix *_CLQI*. It's unfortunately just the way I coded it
+- But as long as I create checks for myself in  `04`, I should be good
+
+```{r}
+CLQI <- function(my_data, var_for_imp, correct_formula, transformed_imputation_relationship, 
+                 num_imp, min_val = 0, max_val) {
+  
+  CLQI_regression_results <- purrr::map(1:num_imp, ~ { #we repeat this num_imp times
+    
+    # copy same missing data for each iteration
+    copy_my_data <- my_data
+    
+    # implement algorithm
+    data_iteration <- implement_logistic_quantile_imputation(
+      my_data = copy_my_data,
+      transformed_imputation_relationship = transformed_imputation_relationship,
+      var_for_imp = var_for_imp,
+      min_val = min_val,
+      max_val = max_val
+    )
+    
+    
+    # perform logistic regression
+    log_reg_df <- glm(as.formula(correct_formula),
+                      data = data_iteration,
+                      family = "binomial") |>
+      broom::tidy() 
+     
+    #this is not necessary, but for organization
+    log_reg_df 
+    }
+  )
+  
+  return(CLQI_regression_results)
+}
+```
+
+> Case 1: 10 imputations with MCAR
+
+```{r}
+estimation_formula <- "outcome ~ biomarker_MCAR_transformed_CLQI + confounder + predictor"
+my_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
+
+tictoc::tic()
+CLQI_results <- CLQI(my_data = generated_data_for_testing, 
+                     var_for_imp = "biomarker_MCAR_transformed",
+                     correct_formula = estimation_formula, 
+                     transformed_imputation_relationship = my_formula, 
+                     num_imp = 10,
+                     min_val = 0,
+                     max_val = q_999999)
+tictoc::toc()
+
+CLQI_results
+```
+
+Lastly, this wasn't done for PMM, but show how we will use the list to get our value for the bias for this iteration
+*We will use purrr to make this look better*
+
+```{r}
+CLQI_results[[1]]
+my_vector <- c()
+
+for(i in 1:length(thing)) {
+  my_vector[i] <- CLQI_results[[i]] |> filter(term == "biomarker_MCAR_transformed_CLQI") |> pull(estimate)
+}
+
+mean(my_vector) - weak_effects[2]
+```
+
+> Case 2: 20 imputations with MAR
+
+```{r, eval=FALSE}
+estimation_formula <- "outcome ~ biomarker_MAR_transformed_CLQI + confounder + predictor"
+my_formula <- "biomarker_MAR_transformed ~ outcome + confounder + predictor"
+
+tictoc::tic()
+CLQI_results <- CLQI(my_data = generated_data_for_testing, 
+                     var_for_imp = "biomarker_MAR_transformed",
+                     correct_formula = estimation_formula, 
+                     transformed_imputation_relationship = my_formula, 
+                     num_imp = 20,
+                     min_val = 0,
+                     max_val = q_999999)
+tictoc::toc()
+
+CLQI_results
 ```
 
