@@ -1,3 +1,0 @@
-
-This qmd will describe how we will perform the full simulation study, along with some functions re
-

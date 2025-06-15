@@ -155,11 +155,48 @@ power <- function(extracted_statistics) {
 }
 ```
 
-## `empirical_SE`
+# The following functions can only be applied to the dataset extracted after running a full simulation
 
-## `RMSE`
+## `empirical_SE` calculates the empirical standard error AFTER the whole simulation setting is performed
 
-## `rel_efficiency`
+```{r}
+empirical_SE <- function(simulation_data) {
+  # Step 1) Calculate the difference between a given estimate and mean of the estimate
+  simulation_data <- simulation_data |>
+    mutate(diff_for_ESE = estimate - mean(estimate)) 
+  
+  # Step 2) From diff_for_ESE, calculate sum of square and divide by n-1
+  empirical_variance <- sum((simulation_data$diff_for_ESE)^2) / (nrow(simulation_data) - 1)
+  
+  # Return ESE
+  return(sqrt(empirical_variance))
+}
+```
+
+## `RMSE` calculates the Root Mean Square Error
+
+```{r}
+RMSE <- function(simulation_data, true_value) {
+  # Get the bias
+  bias <- mean(simulation_data$estimate) - true_value
+  # Get the Empirical SE
+  ESE <- empirical_SE(simulation_data)
+  # Calculate RMSE
+  return(sqrt(bias^2 + ESE^2))
+}
+```
+
+## `rel_efficiency` calculates the relative efficency between two methods
+
+```{r}
+rel_efficiency <- function(simulation_data_A, simulation_data_B) {
+  empirical_variance_A <- var(simulation_data_A$estimate)
+  empirical_variance_B <- var(simulation_data_B$estimate)
+  
+  # Then return our ratio
+  return(empirical_variance_B/empirical_variance_A)
+}
+```
 
 # Monte Carlo Testing for sufficient simulations (N)
 

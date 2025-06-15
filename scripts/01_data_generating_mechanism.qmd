@@ -7,7 +7,7 @@ Before we start, we will define some values we will use for test cases throughou
 *These must be run for any test cases to work*. However, ONLY this needs to be run for test cases
 
 ```{r}
-set.seed(625)
+set.seed(525)
 
 my_sample <- 1000
 weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))

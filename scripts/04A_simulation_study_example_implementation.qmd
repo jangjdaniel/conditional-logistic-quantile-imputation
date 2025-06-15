@@ -1,0 +1,100 @@
+
+This qmd will describe how we will perform the full simulation study. Most functions have already been defined in `00`, `01`, `02`, and `03`, so make sure to read everything there.
+
+*This qmd will likely be a demonstration of how one simulation setting will be tested. We'll see, however*
+
+STEP 1) Define our simulation setting
+
+```{r}
+set.seed(525)
+q_9999 <- get_mixture_quantile(0.9999)
+q_999999 <- get_mixture_quantile(0.999999)
+
+my_sample_size <- 1000
+weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
+num_imp <- 10 #number of imputations
+prop_missing_MCAR <- 0.3
+```
+
+```{r}
+true_effect <- weak_effects[2]
+true_effect
+```
+
+
+STEP 2) Generate dataset with all missingness
+
+```{r}
+simulation_data <- data_generating_mechanism(
+  my_sample = my_sample_size,
+  beta_coefficients = weak_effects,
+  prop_missing_MCAR = prop_missing_MCAR,
+  min_val = 0,
+  max_val = q_999999)
+```
+
+STEP 3) Perform `Complete-Case`, `Complete-Data`, `PMM`, and `CLQI` and get *raw logistic regression results*
+
+`Complete-Case`: Recall that we need to specify the correct missing data: MCAR or MAR
+
+```{r}
+CC <- "outcome ~ biomarker_MCAR + confounder + predictor"
+CC_sim_result <- complete_case_or_data(simulation_data, CC)
+CC_sim_result
+```
+
+`Complete-Data`
+
+```{r}
+CD <- "outcome ~ biomarker + confounder + predictor"
+CD_sim_result <- complete_case_or_data(simulation_data, CD)
+CD_sim_result
+```
+
+`PMM`: Recall we need to select our data first
+
+```{r}
+PMM_formula <- "outcome ~ biomarker_MCAR + confounder + predictor"
+simulation_data_PMM <- simulation_data |>
+  dplyr::select(outcome, biomarker_MCAR, confounder, predictor)
+
+PMM_sim_result <- PMM(simulation_data_PMM, PMM_formula, num_imp)
+PMM_sim_result
+```
+
+`CLQI`: this one was not coded super well, so make sure you're specifying everything correctly
+> Must feed the function the transformed variable, but the estimation formula will be untransformed.
+> Sorry I coded this weirdly
+
+```{r}
+quant_reg_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
+estimation_formula <- "outcome ~ biomarker_MCAR_CLQI_untransformed + confounder + predictor"
+
+CLQI_sim_result <- CLQI(my_data = simulation_data, 
+                        var_for_imp = "biomarker_MCAR_transformed",
+                        transformed_imputation_relationship = quant_reg_formula, 
+                        correct_formula = estimation_formula, 
+                        num_imp = num_imp,
+                        min_val = 0,
+                        max_val = q_999999)
+
+CLQI_sim_result
+```
+
+
+STEP 4) Calculate some of the performance measures 
+
+`bias`
+
+```{r}
+
+```
+
+STEP 5) Repeat Steps 1-4 N times
+
+```{r}
+
+```
+
+
+STEP 6) After Step 5, calculate the remaining performance measures
