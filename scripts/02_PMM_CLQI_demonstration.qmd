@@ -171,8 +171,12 @@ But first, here is an example on how quantile regression works
 # quantile regression!
 reg_coeff <- quantreg::rq(biomarker_MCAR_transformed ~ outcome + confounder + predictor, 
                           data = generated_data_for_testing, 
-                          tau = 0.50) |> #50th quantile
-  tidy()
+                          tau = 0.50) #50th quantile
+
+as.numeric(reg_coeff$coefficients["(Intercept)"])
+
+# or with broom:
+reg_coeff <- reg_coeff |> broom::tidy()
 
 # and here is a way to easily extract regression coefficients
 # example of intercept estimate!
@@ -194,14 +198,13 @@ logistic_quantile_imputation <- function(my_data, transformed_imputation_relatio
   # Step 2) perform quantile regression with the uth quantile
   reg_coeff <- quantreg::rq(as.formula(transformed_imputation_relationship), 
                             data = my_data, 
-                            tau = u) |> #the uth quantile for regression
-    broom::tidy() #turn this into a dataframe
+                            tau = u) #the uth quantile for regression
   
   # save all regression coefficients
-  b_intercept <-  reg_coeff |> filter(term == "(Intercept)") |> pull(estimate)
-  b_outcome <-    reg_coeff |> filter(term == "outcome") |> pull(estimate)
-  b_confounder <- reg_coeff |> filter(term == "confounder") |> pull(estimate)
-  b_predictor <-  reg_coeff |> filter(term == "predictor") |> pull(estimate)
+  b_intercept <-  as.numeric(reg_coeff$coefficients["(Intercept)"])
+  b_outcome <-    as.numeric(reg_coeff$coefficients["outcome"])
+  b_confounder <- as.numeric(reg_coeff$coefficients["confounder"])
+  b_predictor <-  as.numeric(reg_coeff$coefficients["predictor"])
   
   #predicted imputed value (which is in its transformed state)
   imputation_value_transformed <- b_intercept + (b_outcome * my_data[row_index,]$outcome) + (b_confounder * my_data[row_index,]$confounder) + (b_predictor * my_data[row_index,]$predictor)
