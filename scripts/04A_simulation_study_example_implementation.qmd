@@ -53,7 +53,7 @@ CD_sim_result
 
 `PMM`: Recall we need to select our data first
 
-```{r}
+```{r, eval=FALSE}
 PMM_formula <- "outcome ~ biomarker_MCAR + confounder + predictor"
 simulation_data_PMM <- simulation_data |>
   dplyr::select(outcome, biomarker_MCAR, confounder, predictor)
@@ -66,7 +66,7 @@ PMM_sim_result
 > Must feed the function the transformed variable, but the estimation formula will be untransformed.
 > Sorry I coded this weirdly
 
-```{r}
+```{r, eval=FALSE}
 quant_reg_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
 estimation_formula <- "outcome ~ biomarker_MCAR_CLQI_untransformed + confounder + predictor"
 
@@ -86,7 +86,7 @@ STEP 4) Calculate some of the performance measures
 
 `PMM`
 
-```{r}
+```{r, eval=FALSE}
 extracted_PMM <- extract_statistics(PMM_sim_result, "biomarker_MCAR")
 estimate_PMM <- rubin_rule_estimate(extracted_PMM)
 model_SE_PMM <- rubin_rule_SE(extracted_PMM)
@@ -109,7 +109,7 @@ PMM_sim_run
 
 `CLQI`
 
-```{r}
+```{r, eval=FALSE}
 extracted_CLQI <- extract_statistics(CLQI_sim_result, "biomarker_MCAR_CLQI_untransformed")
 estimate_CLQI <- rubin_rule_estimate(extracted_CLQI)
 model_SE_CLQI <- rubin_rule_SE(extracted_CLQI)
@@ -130,10 +130,99 @@ CLQI_sim_run <- data.frame(
 CLQI_sim_run
 ```
 
+`calculate_one_sim_performance` is a function that calculates everything automatically
+- Same arguments as `extract_statistics`
+
+```{r}
+calculate_one_sim_performance <- function(my_list_of_reg, var_of_interest, true_value) {
+  extracted <- extract_statistics(my_list_of_reg, var_of_interest)
+  
+  estimate <- rubin_rule_estimate(extracted)
+  model_SE <- rubin_rule_SE(extracted)
+  
+  #now the dataframe
+  sim_run <- data.frame(
+    estimate = estimate,
+    bias = estimate - true_value,
+    rel_bias = ((estimate - true_value) / true_value) * 100,
+    model_SE = model_SE,
+    coverage = coverage(estimate, model_SE,
+                        orig_sample_size = 1000,
+                        true_value = true_value) ,
+    power =  power(extracted)
+  ) 
+
+  return(sim_run)
+  
+}
+```
+
+> Test case 1) Check that CLQI and PMM ones look the same
+
+```{r, eval=FALSE}
+calculate_one_sim_performance(CLQI_sim_result,
+                              "biomarker_MCAR_CLQI_untransformed",
+                              true_value = true_effect)
+```
+
 STEP 5) Repeat Steps 1-4 N times
 
 ```{r}
+# STEP 0) Define datasets for all four methods
+PMM_total_result <- data.frame()
+CLQI_total_result <- data.frame()
+iteration_indicator <- 0
 
+tictoc::tic()
+for(i in 1:20) {
+
+  # STEP 1) Generate data
+  new_data <- data_generating_mechanism(
+    my_sample = my_sample_size,
+    beta_coefficients = weak_effects,
+    prop_missing_MCAR = prop_missing_MCAR,
+    min_val = 0,
+    max_val = q_999999)
+  
+  # Do PMM
+  PMM_formula <- "outcome ~ biomarker_MCAR + confounder + predictor"
+  new_data_PMM <- new_data |>
+    dplyr::select(outcome, biomarker_MCAR, confounder, predictor)
+  
+  PMM_sim_result <- PMM(new_data_PMM, PMM_formula, num_imp)
+  PMM_sim_result <- calculate_one_sim_performance(PMM_sim_result,
+                                                  "biomarker_MCAR",
+                                                  true_value = true_effect)
+  
+    # Append to PMM
+    PMM_total_result <- dplyr::bind_rows(PMM_total_result, PMM_sim_result)
+  
+  # Do CLQI
+  quant_reg_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
+  estimation_formula <- "outcome ~ biomarker_MCAR_CLQI_untransformed + confounder + predictor"
+  
+  CLQI_sim_result <- CLQI(my_data = new_data, 
+                          var_for_imp = "biomarker_MCAR_transformed",
+                          transformed_imputation_relationship = quant_reg_formula, 
+                          correct_formula = estimation_formula, 
+                          num_imp = num_imp,
+                          min_val = 0,
+                          max_val = q_999999)
+  CLQI_sim_result <- calculate_one_sim_performance(CLQI_sim_result,
+                                                   "biomarker_MCAR_CLQI_untransformed",
+                                                   true_value = true_effect)
+  
+    # Append to CLQI
+    CLQI_total_result <- dplyr::bind_rows(CLQI_total_result, CLQI_sim_result)
+    
+  #end this by showing imputation
+    iteration_indicator <- iteration_indicator + 1
+    print(iteration_indicator)
+}
+tictoc::toc()
+
+PMM_total_result
+CLQI_total_result
 ```
 
 STEP 6) After Step 5, calculate the remaining performance measures
