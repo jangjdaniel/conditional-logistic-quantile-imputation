@@ -9,7 +9,7 @@ This will be incorporated in these functions, as they take in the list of regres
 This is the toy data we will be using for Rubin Rules for testing our functions
 
 ```{r}
-set.seed(625)
+set.seed(525)
 
 my_sample <- 1000
 weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
@@ -19,21 +19,26 @@ generated_data_for_testing <- data_generating_mechanism(my_sample = my_sample,
                                                         min_val = 0,
                                                         max_val = q_999999)
 
-estimation_formula <- "outcome ~ biomarker_MCAR_transformed_CLQI + confounder + predictor"
-my_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
-q_999999 <- get_mixture_quantile(0.999999)
+
+quant_reg_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
+estimation_formula <- "outcome ~ biomarker_MCAR_CLQI_untransformed + confounder + predictor"
 
 tictoc::tic()
 CLQI_results <- CLQI(my_data = generated_data_for_testing, 
                      var_for_imp = "biomarker_MCAR_transformed",
+                     transformed_imputation_relationship = quant_reg_formula, 
                      correct_formula = estimation_formula, 
-                     transformed_imputation_relationship = my_formula, 
                      num_imp = 10,
                      min_val = 0,
                      max_val = q_999999)
 tictoc::toc()
 
 CLQI_results
+
+#comparison with complete data
+glm(outcome ~ biomarker + confounder + predictor,
+    data = generated_data_for_testing,
+    family = "binomial")
 ```
 
 ## `extract_statistics` puts everything into a nice list of relevant values for us to use

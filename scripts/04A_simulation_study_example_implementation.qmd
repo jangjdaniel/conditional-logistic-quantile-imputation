@@ -84,10 +84,50 @@ CLQI_sim_result
 
 STEP 4) Calculate some of the performance measures 
 
-`bias`
+`PMM`
 
 ```{r}
+extracted_PMM <- extract_statistics(PMM_sim_result, "biomarker_MCAR")
+estimate_PMM <- rubin_rule_estimate(extracted_PMM)
+model_SE_PMM <- rubin_rule_SE(extracted_PMM)
 
+#now the dataframe
+PMM_sim_run <- data.frame(
+  estimate = estimate_PMM,
+  bias = estimate_PMM - true_effect,
+  rel_bias = ((estimate_PMM - true_effect) / true_effect) * 100,
+  model_SE = model_SE_PMM,
+  coverage = coverage(estimate_PMM, model_SE_PMM, 
+                          orig_sample_size = 1000,
+                          true_value = true_effect) ,
+  power =  power(extracted_PMM)
+) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+
+PMM_sim_run
+```
+
+`CLQI`
+
+```{r}
+extracted_CLQI <- extract_statistics(CLQI_sim_result, "biomarker_MCAR_CLQI_untransformed")
+estimate_CLQI <- rubin_rule_estimate(extracted_CLQI)
+model_SE_CLQI <- rubin_rule_SE(extracted_CLQI)
+
+#now the dataframe
+CLQI_sim_run <- data.frame(
+  estimate = estimate_CLQI,
+  bias = estimate_CLQI - true_effect,
+  rel_bias = ((estimate_CLQI - true_effect) / true_effect) * 100,
+  model_SE = model_SE_CLQI,
+  coverage = coverage(estimate_CLQI, model_SE_CLQI, 
+                          orig_sample_size = 1000,
+                          true_value = true_effect) ,
+  power =  power(extracted_CLQI)
+) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+
+CLQI_sim_run
 ```
 
 STEP 5) Repeat Steps 1-4 N times
@@ -96,5 +136,9 @@ STEP 5) Repeat Steps 1-4 N times
 
 ```
 
-
 STEP 6) After Step 5, calculate the remaining performance measures
+
+```{r}
+
+```
+
