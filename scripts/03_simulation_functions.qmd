@@ -4,22 +4,169 @@ This qmd defines the functions that we will be using for our simulation study an
 Before that, we need to perform *Rubin Rules* to aggregate all important information!
 This will be incorporated in these functions, as they take in the list of regression coefficients from `02` functions
 
+# Rubin Rules
+
+This is the toy data we will be using for Rubin Rules for testing our functions
+
+```{r}
+set.seed(625)
+
+my_sample <- 1000
+weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
+generated_data_for_testing <- data_generating_mechanism(my_sample = my_sample,
+                                                        beta_coefficients = weak_effects,
+                                                        prop_missing_MCAR = 0.3,
+                                                        min_val = 0,
+                                                        max_val = q_999999)
+
+estimation_formula <- "outcome ~ biomarker_MCAR_transformed_CLQI + confounder + predictor"
+my_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
+q_999999 <- get_mixture_quantile(0.999999)
+
+tictoc::tic()
+CLQI_results <- CLQI(my_data = generated_data_for_testing, 
+                     var_for_imp = "biomarker_MCAR_transformed",
+                     correct_formula = estimation_formula, 
+                     transformed_imputation_relationship = my_formula, 
+                     num_imp = 10,
+                     min_val = 0,
+                     max_val = q_999999)
+tictoc::toc()
+
+CLQI_results
+```
+
+## `extract_statistics` puts everything into a nice list of relevant values for us to use
+
+```{r}
+extract_statistics <- function(my_list_of_reg, var_of_interest) {
+  
+  #helper function to extract columns
+  extract_col <- function(col_name) {
+    purrr::map_dbl(my_list_of_reg, ~ {
+      .x |> 
+        filter(term == var_of_interest) |> 
+        pull(.data[[col_name]])
+    })
+  }
+  
+  estimates <- extract_col("estimate")
+  standard_error <- extract_col("std.error")
+  p_values <- extract_col("p.value")
+  
+  return(list(estimates, standard_error, p_values))
+}
+```
+
+> Test case: compare with actual coefficients to see that this worked
+
+```{r, eval=FALSE}
+extract_statistics(CLQI_results, "biomarker_MCAR_transformed_CLQI")
+# Compare
+CLQI_results
+```
+
+## `rubin_rule_estimate` uses rubin rules to calculate the estimate after MI
+
+```{r}
+rubin_rule_estimate <- function(extracted_statistics) {
+  estimate_vector <- as.vector(extracted_statistics[[1]])
+  return(mean(estimate_vector))
+}
+```
+
+> Test case
+
+```{r, eval=FALSE}
+rubin_rule_estimate(extract_statistics(CLQI_results, "biomarker_MCAR_transformed_CLQI"))
+```
+
+## `rubin_rule_model_se` uses rubin rules to calculate the SE of our estimate after MI
+
+```{r}
+rubin_rule_SE <- function(extracted_statistics) {
+  #extract necessary vectors
+  estimate_vector <- as.vector(extracted_statistics[[1]])
+  SE_vector <- as.vector(extracted_statistics[[2]])
+  m <- length(estimate_vector) #number of imputations
+  
+  #necessary calculations
+  variance_within_MI <- mean((SE_vector)^2)
+  variance_between_MI <- sum((estimate_vector - mean(estimate_vector))^2) / (m - 1)
+  
+  #actual value
+  total_variance <- variance_within_MI + variance_between_MI + (variance_between_MI / m)
+  
+  return(sqrt(total_variance))
+}
+```
+
+> Test case
+
+```{r, eval=FALSE}
+rubin_rule_SE(extract_statistics(CLQI_results, "biomarker_MCAR_transformed_CLQI"))
+```
+
 # Performance Measure Functions
 
-## `bias`
+## `bias` is too simple to be a function. It will be calculated manually in `04`
+
+## `model_based_SE` is just the same as `rubin_rule_SE`, so a separate function is unnecessary
+
+## `coverage` uses the estimate and SE from Rubin Rules to see if the true value is contained
+
+```{r}
+coverage <- function(RR_estimate, SE_estimate, orig_sample_size, true_value) {
+  t_star <- qt(0.975, df = orig_sample_size - 1) #good enough estimate
+  
+  coverage_indicator <- ifelse((RR_estimate - t_star*SE_estimate) <= true_value & true_value <= (RR_estimate + t_star*SE_estimate),
+                               1, 0) #if true value is covered, it's 1. 
+  
+  return(coverage_indicator)
+}
+```
+
+## `power` uses the wald test to calculate a p-value from the estimate
+
+```{r}
+power <- function(extracted_statistics) {
+  
+  # extract important information
+  estimate_vector <- as.vector(extracted_statistics[[1]])
+  SE_vector <- as.vector(extracted_statistics[[2]])
+  m <- length(estimate_vector) #number of imputations
+  
+  # df calculation
+  variance_within_MI <- mean((SE_vector)^2)
+  variance_between_MI <- sum((estimate_vector - mean(estimate_vector))^2) / (m - 1)
+  my_frac <- variance_between_MI / (m * variance_within_MI)
+  df <- ((m - 1) / (1 + my_frac)^2) 
+  
+  # wald t statistic: repeat rubin rules again for function cleaniness
+  RR_estimate <- mean(estimate_vector)
+  SE_estimate <- sqrt(variance_within_MI + variance_between_MI + (variance_between_MI / m))
+  wald <- RR_estimate / SE_estimate
+  
+  # p-value calculation
+  p_value <- 2 * (1 - pt(abs(wald), df))
+  
+  #return 1 if we reject H0 (from DGM, we know H1 to be true)
+  return(ifelse(p_value < 0.05, 1, 0))
+}
+```
 
 ## `empirical_SE`
 
 ## `RMSE`
 
-## `model_based_SE`
-
-## `coverage`
-
-## `power`
-
 ## `rel_efficiency`
 
 # Monte Carlo Testing for sufficient simulations (N)
 
-# `MCSE` is the function for calculating Monte Carlo Standard Error
+## `MCSE` is the function for calculating Monte Carlo Standard Error
+
+```{r}
+MCSE <- function(vec_values_interest, num_sim) {
+  return(sd(vec_values_interest) / sqrt(num_sim))
+}
+```

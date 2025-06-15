@@ -416,3 +416,16 @@ tictoc::toc()
 CLQI_results
 ```
 
+# Complete-Case Analysis (Worst Case)
+
+```{r}
+
+```
+
+# Complete-Data Analysis (Best Case)
+
+```{r}
+
+```
+
+*Remove functions here*
