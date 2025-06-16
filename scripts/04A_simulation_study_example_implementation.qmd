@@ -21,7 +21,6 @@ true_effect <- weak_effects[2]
 true_effect
 ```
 
-
 STEP 2) Generate dataset with all missingness
 
 ```{r}
@@ -83,6 +82,12 @@ CLQI_sim_result
 
 
 STEP 4) Calculate some of the performance measures 
+
+``CC and CD` *NOT IMPLEMENTED YET*
+
+```{r}
+
+```
 
 `PMM`
 
@@ -167,8 +172,12 @@ calculate_one_sim_performance(CLQI_sim_result,
 
 STEP 5) Repeat Steps 1-4 N times
 
+*CC and CD NOT IMPLEMENTED YET*
+
 ```{r}
 # STEP 0) Define datasets for all four methods
+CC_total_result <- data.frame()
+CD_total_result <- data.frame()
 PMM_total_result <- data.frame()
 CLQI_total_result <- data.frame()
 iteration_indicator <- 0
@@ -220,12 +229,57 @@ for(i in 1:20) {
     print(iteration_indicator)
 }
 tictoc::toc()
-
-PMM_total_result
-CLQI_total_result
 ```
 
-STEP 6) After Step 5, calculate the remaining performance measures
+`repeat_full_simulation``
+
+```{r}
+
+```
+
+VERY Initial checks
+
+```{r}
+PMM_total_result
+CLQI_total_result
+
+ggplot(data = PMM_total_result, aes(x = bias))+ 
+  geom_density()
+
+ggplot(data = CLQI_total_result, aes(x = bias))+ 
+  geom_density()
+```
+
+STEP 6) After Step 5, calculate all the remaining performance measures
+- Example with CLQI
+
+```{r}
+CLQI_total_result |>
+  summarize(
+    estimate = mean(estimate),
+    MCSE_estimate = MCSE(CLQI_total_result$estimate, num_sim = 10),
+    
+    bias = mean(bias),
+    MCSE_bias = MCSE(CLQI_total_result$bias, num_sim = 10),
+    
+    model_SE = mean(model_SE),
+    MCSE_model_SE = MCSE(CLQI_total_result$model_SE, num_sim = 10),
+    
+    coverage = sum(coverage) / n(),
+    power = sum(power) / n(),
+    
+    empirical_SE = empirical_SE(CLQI_total_result),
+    RMSE = RMSE(CLQI_total_result, true_effect),
+    relative_efficiency = rel_efficiency(CLQI_total_result, PMM_total_result)
+  ) |>
+  gt() |>
+  fmt_number(
+    columns = everything(),
+    decimals = 4
+  )
+```
+
+`summarize_full_simulation`
 
 ```{r}
 
