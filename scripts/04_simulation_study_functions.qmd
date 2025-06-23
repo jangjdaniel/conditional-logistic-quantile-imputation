@@ -238,7 +238,7 @@ CLQI_total_result <- data.frame()
 iteration_indicator <- 0
 
 tictoc::tic()
-for(i in 1:20) {
+for(i in 1:1000) {
 
   # STEP 1) Generate data
   new_data <- data_generating_mechanism(
@@ -316,6 +316,16 @@ ggplot(data = PMM_total_result, aes(x = bias))+
 ggplot(data = CLQI_total_result, aes(x = bias))+ 
   geom_density()
 ```
+
+Save the data to sim_results
+
+```{r}
+sim_list <- list(CC_total_result, CD_total_result, PMM_total_result, CLQI_total_result)
+
+#save in my sim folder
+saveRDS(sim_list, file="sim_results/initial_sim_result.RData")
+```
+
 
 *Function will be defined in* `05` for clarity
 

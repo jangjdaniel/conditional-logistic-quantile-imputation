@@ -1,0 +1,6 @@
+This qmd houses the distance metrics we will use to compare the imputed distribution with the theoretical distribution.
+
+```{r}
+
+```
+
