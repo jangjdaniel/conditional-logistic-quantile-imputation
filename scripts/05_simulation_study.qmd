@@ -1,0 +1,36 @@
+
+This qmd is a culmination from `00-04`. I hope that I was able to tell a story on how we're approaching this problem.
+
+We will first define a function that encompasses all the important parts needed to do one simulation run, and then we will run our simulations *(potentially in different documents to avoid confusion, but we're not sure at the moment)*.
+
+`repeat_full_simulation` is a function that calculates (most of) the performance of all four methods of interest. This is a very extensive function and is what everything has built up to.
+
+```{r}
+repeat_full_simulation <- function() {
+  
+  # STEP 0) Define datasets for all four methods
+  CC_total_result <- data.frame()
+  CD_total_result <- data.frame()
+  PMM_total_result <- data.frame()
+  CLQI_total_result <- data.frame()
+  
+  #have an iteration indicator to see if function is still running
+  iteration_indicator <- 0
+
+  
+}
+```
+
+> "Test case": See that everything generates for all four methods
+
+```{r}
+
+```
+
+
+# SIMULATION SETTING 1: 
+
+```{r}
+
+```
+
