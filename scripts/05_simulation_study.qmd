@@ -7,6 +7,12 @@ We will first define a function that encompasses all the important parts needed 
 set.seed(695)
 ```
 
+# Coefficient Effects
+
+```{r}
+weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
+strong_effects <- c(logit(0.1), log(1.5), log(0.7), log(0.85))
+```
 
 `repeat_full_simulation_MCAR` is a function that calculates the performance of all four methods of interest for the *MCAR* case. This is a very extensive function and is what everything has built up to.
 
