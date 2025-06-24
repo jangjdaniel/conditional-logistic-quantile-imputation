@@ -110,7 +110,10 @@ repeat_full_simulation_MCAR <- function(num_simulations = 1000, my_sample_size,
                         rel_eff_comparison = CD_total_result)
   
   #return the list
-  return(list(a,b,c,d))
+  return(list(CC_total_result, a, 
+              CD_total_result, b,
+              PMM_total_result, c,
+              CLQI_total_result, d))
 }
 ```
 
