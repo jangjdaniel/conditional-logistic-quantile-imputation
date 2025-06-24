@@ -63,7 +63,8 @@ distance_testing_data$confounder <- factor(distance_testing_data$confounder,
                                            labels = c("Confounder = 0", "Confounder = 1"))
 
 # Plot imputed biomarker distribution with theoretical overlay
-ggplot(distance_testing_data, aes(x = biomarker_MCAR_CLQI_untransformed, fill = confounder)) +
+CLQI_imp_quality <- 
+  ggplot(distance_testing_data, aes(x = biomarker_MCAR_CLQI_untransformed, fill = confounder)) +
   geom_density(alpha = 0.5, color = NA) +
   facet_wrap(~ confounder) +
   stat_function(
@@ -88,5 +89,13 @@ ggplot(distance_testing_data, aes(x = biomarker_MCAR_CLQI_untransformed, fill = 
   theme_bw() +
   scale_fill_manual(values = c("skyblue", "orange")) +
   theme(legend.position = "none")
+
+CLQI_imp_quality
 ```
 
+# Save it!
+
+```{r}
+ggsave(CLQI_imp_quality, file = "vis/CLQI_imp_quality.png")
+rm(CLQI_imp_quality)
+```
