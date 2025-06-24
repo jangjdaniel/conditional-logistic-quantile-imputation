@@ -499,8 +499,6 @@ sum(generated_data_for_CLQI$diff, na.rm=TRUE)
 Visualization based on test case: *NOT FINISHED*
 
 ```{r, eval=FALSE}
-
-
 # visualize what the imputed biomarker distributions look like
 ggplot(data = generated_data_for_CLQI, aes(x = biomarker_MCAR_CLQI)) +
   geom_density()
@@ -511,94 +509,3 @@ ggplot(data = generated_data_for_CLQI, aes(x = biomarker_MCAR)) +
 ggplot(data = generated_data_for_CLQI, aes(x = biomarker)) +
   geom_density()
 ```
-
-Lastly, `CLQI`, like `PMM` fully implements CLQI by creating a list of *m* dataframes of logistic regression results
-- Recall that *correct_formula* must include the suffix *_CLQI*. It's unfortunately just the way I coded it
-- But as long as I create checks for myself in  `04`, I should be good
-
-```{r}
-CLQI <- function(my_data, var_for_imp, transformed_imputation_relationship, correct_formula, 
-                 num_imp, min_val = 0, max_val) {
-  
-  CLQI_regression_results <- purrr::map(1:num_imp, ~ { #we repeat this num_imp times
-    
-    # copy same missing data for each iteration
-    copy_my_data <- my_data
-    
-    # implement algorithm
-    data_iteration <- implement_logistic_quantile_imputation(
-      my_data = copy_my_data,
-      transformed_imputation_relationship = transformed_imputation_relationship,
-      var_for_imp = var_for_imp,
-      min_val = min_val,
-      max_val = max_val
-    )
-    
-    # perform logistic regression
-    log_reg_df <- glm(as.formula(correct_formula),
-                      data = data_iteration,
-                      family = "binomial") |>
-      broom::tidy() 
-     
-    #this is not necessary, but for organization
-    log_reg_df 
-    }
-  )
-  
-  return(CLQI_regression_results)
-}
-```
-
-> Case 1: 10 imputations with MCAR
-
-```{r, eval=FALSE}
-my_formula <- "biomarker_MCAR ~ outcome + confounder + predictor"
-estimation_formula <- "outcome ~ biomarker_MCAR_CLQI + confounder + predictor"
-
-tictoc::tic()
-CLQI_results <- CLQI(my_data = generated_data_for_testing, 
-                     var_for_imp = "biomarker_MCAR",
-                     transformed_imputation_relationship = my_formula, 
-                     correct_formula = estimation_formula, 
-                     num_imp = 10,
-                     min_val = 0,
-                     max_val = q_999999)
-tictoc::toc()
-
-CLQI_results
-```
-
-Lastly, this wasn't done for PMM, but show how we will use the list to get our value for the bias for this iteration
-*We will use purrr to make this look better*
-
-```{r, eval=FALSE}
-CLQI_results[[1]]
-my_vector <- c()
-
-for(i in 1:length(CLQI_results)) {
-  my_vector[i] <- CLQI_results[[i]] |> filter(term == "biomarker_MCAR_transformed_CLQI") |> pull(estimate)
-}
-
-mean(my_vector) - weak_effects[2]
-```
-
-> Case 2: 20 imputations with MAR
-
-```{r, eval=FALSE}
-estimation_formula <- "outcome ~ biomarker_MAR_transformed_CLQI + confounder + predictor"
-my_formula <- "biomarker_MAR_transformed ~ outcome + confounder + predictor"
-
-tictoc::tic()
-CLQI_results <- CLQI(my_data = generated_data_for_testing, 
-                     var_for_imp = "biomarker_MAR_transformed",
-                     transformed_imputation_relationship = my_formula, 
-                     correct_formula = estimation_formula, 
-                     num_imp = 20,
-                     min_val = 0,
-                     max_val = q_999999)
-tictoc::toc()
-
-CLQI_results
-```
-
-*Remove functions here*

@@ -380,11 +380,6 @@ full_performance <- function(simulation_results, rel_eff_comparison) {
       empirical_SE = empirical_SE(simulation_results),
       RMSE = RMSE(CLQI_total_result, true_effect),
       relative_efficiency = rel_efficiency(simulation_results, rel_eff_comparison) #always compare with CD
-    ) |>
-    gt() |>
-    fmt_number(
-      columns = everything(),
-      decimals = 4
     )
   
   return(full_simulation_results)
