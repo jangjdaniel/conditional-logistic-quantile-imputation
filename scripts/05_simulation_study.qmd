@@ -17,7 +17,7 @@ strong_effects <- c(logit(0.1), log(1.5), log(0.7), log(0.85))
 `repeat_full_simulation_MCAR` is a function that calculates the performance of all four methods of interest for the *MCAR* case. This is a very extensive function and is what everything has built up to.
 
 ```{r}
-repeat_full_simulation_MCAR <- function(num_simulations = 1000, my_sample_size, 
+repeat_full_simulation_MCAR <- function(num_simulations = 1000, my_sample_size, num_imp
                                         coefficient_effects, true_effect, prop_missing_MCAR) {
   
   # STEP 0) Define datasets for all four methods
@@ -120,7 +120,7 @@ repeat_full_simulation_MCAR <- function(num_simulations = 1000, my_sample_size,
 > "Test case": See that everything generates for all four methods
 
 ```{r, eval=FALSE}
-repeat_full_simulation_MCAR(num_simulations = 10, my_sample_size = 1000,
+repeat_full_simulation_MCAR(num_simulations = 10, my_sample_size = 1000, num_imp = 10
                             coefficient_effects = weak_effects, true_effect = weak_effects[2],
                             prop_missing_MCAR = 0.3)
 ```
