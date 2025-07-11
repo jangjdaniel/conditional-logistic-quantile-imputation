@@ -8,8 +8,14 @@ Before we start, we will define some values we will use for test cases throughou
 
 ```{r}
 set.seed(525)
+```
 
-my_sample <- 1000
+Some values we will use to test
+
+```{r}
+my_sample <- 1000 
+min <- 0
+max <- 10 #change the data_generator function to include this
 weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
 strong_effects <- c(logit(0.1), log(1.5), log(0.7), log(0.85))
 ```
@@ -47,7 +53,9 @@ data_generator <- function(sample_size, coefficient_vector) {
   # Generate values from distributions
   confounder <- rbinom(sample_size, size = 1, prob = 0.4) #prob of success is 0.4
   predictor <- rnorm(sample_size, mean = 0, sd = 1) #this is our continuous predictor
-  biomarker <- rchisq(sample_size, df = 5 + 3*confounder) #if B = 1, X ~ chisq(8). else, X ~ chisq(5)
+  biomarker <- rtrunc(sample_size, spec = "chisq", #use truncated distribution instead
+                      a = 0, b = 10, 
+                      df = 3 + 2*confounder) #if B = 1, X ~ chisq(8). else, X ~ chisq(5)
   
   # Generate the outcome
   outcome <- plogis(b_0 + b_1*biomarker + b_2*confounder + b_3*predictor) 

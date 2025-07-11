@@ -8,6 +8,7 @@ library(ggplot2)
 library(MASS)
 library(purrr) #for looping
 library(tictoc) #for checking runtime
+library(LaplacesDemon)
 
 # Here are some specialized packages for ease of life to extract visualizations from our simulations
 library(gt)
