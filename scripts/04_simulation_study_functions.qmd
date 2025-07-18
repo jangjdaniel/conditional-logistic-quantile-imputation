@@ -213,7 +213,6 @@ MI_performance_one_iter <- function(my_list_of_reg, var_of_interest, true_value)
   ) 
 
   return(sim_run)
-  
 }
 ```
 

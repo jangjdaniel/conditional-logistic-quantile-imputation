@@ -123,6 +123,8 @@ repeat_full_simulation_MCAR <- function(num_simulations = 1000, my_sample_size, 
 repeat_full_simulation_MCAR(num_simulations = 10, my_sample_size = 1000, num_imp = 10
                             coefficient_effects = weak_effects, true_effect = weak_effects[2],
                             prop_missing_MCAR = 0.3)
+
+tester
 ```
 
 # SIMULATION SETTING 1: Example of setup

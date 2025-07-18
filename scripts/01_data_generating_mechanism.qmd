@@ -112,23 +112,44 @@ It creates two variants of the `biomarker` variable
 
 ```{r}
 missing_generator <- function(my_data, missing_prop_for_MCAR) {
-
+  
   # Add biomarker variants to induce missingness
   my_data <- my_data |>
     mutate(biomarker_MCAR = biomarker,
            biomarker_MAR = biomarker)
+  
+  # Add a row index 
+  my_data <- my_data |>
+    mutate(row_index = row_number())
+  
   
   # MCAR
   my_data <- missMethods::delete_MCAR(my_data,  #name of data
                                       missing_prop_for_MCAR,  #proportion of data you want missing
                                       "biomarker_MCAR") #name of variable you want to do this
   
-  # MAR:
+  # MAR: bad fix
+  if (missing_prop_for_MCAR == 0.3) {
+    alpha <- log(0.2 / (1 - 0.2))        # logit(0.2)
+    beta <- log(2)                       # doubles odds when C = 1
+    
+  } else if (missing_prop_for_MCAR == 0.45) {
+    alpha <- log(0.3 / (1 - 0.3))        # logit(0.3) ≈ -0.847
+    beta <- log(2.5)                     # increases odds ~2.5× when C = 1
+    
+  } else if (missing_prop_for_MCAR == 0.6) {
+    alpha <- log(0.4 / (1 - 0.4))        # logit(0.4) ≈ -0.405
+    beta <- log(3)                       # increases odds ~3× when C = 1
+  }
   
-  
-  # Add a row index 
+  #calculate the missingness based on the probs given
   my_data <- my_data |>
-    mutate(row_index = row_number())
+    mutate(logit_p = alpha + beta * confounder,
+           prob_missing = 1 / (1 + exp(-logit_p)), #calculate predicted prob of missing
+           missing_MAR = rbinom(n(), size = 1, prob = prob_missing), #make indicator
+           biomarker_MAR = ifelse(missing_MAR == 1, NA, biomarker_MAR) #done
+    ) |>
+    dplyr::select(-logit_p, prob_missing, missing_MAR)
   
   return(my_data)
 }

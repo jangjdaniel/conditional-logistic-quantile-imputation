@@ -55,7 +55,7 @@ complete_case_or_data <- function(my_data, correct_formula) {
   CCD <- glm(as.formula(correct_formula),
              data = my_data,
              family = "binomial") |>
-    broom::tidy() 
+    broom::tidy() #slow as hell
   
   return(CCD)
 }
