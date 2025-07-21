@@ -1,0 +1,59 @@
+```{r}
+library(tidyverse) #get purrr
+library(here)
+```
+
+# Extract my results
+
+```{r}
+mcar_results <- map(list.files(here("sim_results_MCAR"), 
+                               full.names = TRUE, pattern = "\\.rds$"), 
+                    readRDS)
+```
+
+```{r}
+mcar_results_cleaned <- purrr::map_dfr(1:length(mcar_results), ~ {
+  
+  #get the iteration
+  iter <- .x
+  temp <- mcar_results[[iter]]
+  
+  #bind everything together and return the dataset, also calculate rel bias here?
+  rbind(
+    temp[[2]] |> mutate(type = "CC"),
+    temp[[4]] |> mutate(type = "CD"),
+    temp[[6]] |> mutate(type = "PMM"),
+    temp[[8]] |> mutate(type = "CLQI")
+  ) |>
+    mutate(sample_size = temp[[9]],
+           prop_missing_MCAR = temp[[10]],
+           effect_strength = temp[[11]]
+           )
+})
+```
+
+Code to analyse
+> Something is definitely going wrong because coverage probability is not good
+
+```{r}
+mcar_results_cleaned_weak <- mcar_results_cleaned |>
+  filter(effect_strength == "weak")
+
+ggplot(data = mcar_results_cleaned_weak, aes(x = type, y = coverage)) +
+  geom_hline(yintercept = 0.95) + 
+  geom_point() +
+  facet_grid(sample_size ~ prop_missing_MCAR) +
+  labs(x = "Method",
+       y = "Coverage")
+
+mcar_results_cleaned_strong <- mcar_results_cleaned |>
+  filter(effect_strength == "strong")
+
+ggplot(data = mcar_results_cleaned_strong, aes(x = type, y = coverage)) +
+  geom_hline(yintercept = 0.95) + 
+  geom_point() +
+  facet_grid(sample_size ~ prop_missing_MCAR) +
+  labs(x = "Method",
+       y = "Coverage")
+```
+
