@@ -496,13 +496,13 @@ full_performance <- function(simulation_results, rel_eff_comparison) {
   full_simulation_results <- simulation_results |>
     summarize(
       estimate = mean(estimate),
-      MCSE_estimate = MCSE(simulation_results$estimate, num_sim = 10),
+      MCSE_estimate = MCSE(simulation_results$estimate, num_sim = 30),
       
       bias = mean(bias),
-      MCSE_bias = MCSE(simulation_results$bias, num_sim = 10),
+      MCSE_bias = MCSE(simulation_results$bias, num_sim = 30),
       
       model_SE = mean(model_SE),
-      MCSE_model_SE = MCSE(simulation_results$model_SE, num_sim = 10),
+      MCSE_model_SE = MCSE(simulation_results$model_SE, num_sim = 30),
       
       coverage = sum(coverage) / n(),
       power = sum(power) / n(),
@@ -624,8 +624,8 @@ repeat_full_simulation_MCAR <- function(num_simulations = 1000, my_sample_size, 
 ############################################################################ TEST CASE
 tictoc::tic()
 tester <- repeat_full_simulation_MCAR(num_simulations = 5, #this is solely a test 
-                                      my_sample_size = 1000, 
-                                      num_imp = 10,
+                                      my_sample_size = 1000, #again a test
+                                      num_imp = 10, #again a test
                                       coefficient_effects = c(logit(0.1), log(1.1), log(0.7), log(0.85)),
                                       true_effect = log(1.1), 
                                       prop_missing_MCAR = 0.3)
@@ -633,7 +633,7 @@ tictoc::toc()
 
 ############################################################################ furrr across all possible settings from grid_design
 
-run_subset_simulations_MCAR <- function(subset_design_grid, num_sim = 1000) {
+run_subset_simulations_MCAR <- function(subset_design_grid, num_sim = 5000, num_imp = 10) {
   
   # Lookup for effects
   effect_lookup <- list(
@@ -671,7 +671,7 @@ run_subset_simulations_MCAR <- function(subset_design_grid, num_sim = 1000) {
       sim_result <- repeat_full_simulation_MCAR(
         num_simulations = num_sim,
         my_sample_size = sample_size,
-        num_imp = 10,
+        num_imp = num_imp,
         coefficient_effects = coefficient_effects,
         true_effect = true_effect,
         prop_missing_MCAR = prop_missing_MCAR
@@ -704,4 +704,4 @@ set.seed(525) #set seed for reproducibility
 cores <- 9 #for number of simulation settings: parallelize based on this value
 future::plan(multisession, workers = cores) #change to cores when this becomes implemented
 
-run_subset_simulations_MCAR(grid_design_MCAR, num_sim = 5000) #this saves all the results into a folder for loading
+run_subset_simulations_MCAR(grid_design_MCAR, num_sim = 5000, num_imp = 30) #this saves all the results into a folder for loading

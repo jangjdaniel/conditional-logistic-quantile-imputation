@@ -39,8 +39,8 @@ Code to analyse
 mcar_results_cleaned_weak <- mcar_results_cleaned |>
   filter(effect_strength == "weak")
 
-ggplot(data = mcar_results_cleaned_weak, aes(x = type, y = coverage)) +
-  geom_hline(yintercept = 0.95) + 
+ggplot(data = mcar_results_cleaned_weak, aes(x = type, y = bias)) +
+  geom_hline(yintercept = 0) + 
   geom_point() +
   facet_grid(sample_size ~ prop_missing_MCAR) +
   labs(x = "Method",
@@ -49,11 +49,21 @@ ggplot(data = mcar_results_cleaned_weak, aes(x = type, y = coverage)) +
 mcar_results_cleaned_strong <- mcar_results_cleaned |>
   filter(effect_strength == "strong")
 
-ggplot(data = mcar_results_cleaned_strong, aes(x = type, y = coverage)) +
-  geom_hline(yintercept = 0.95) + 
+ggplot(data = mcar_results_cleaned_strong, aes(x = type, y = bias)) +
+  geom_hline(yintercept = 0) + 
   geom_point() +
   facet_grid(sample_size ~ prop_missing_MCAR) +
   labs(x = "Method",
        y = "Coverage")
+```
+
+Okay this is weird this isn't consistent even with set.seed. Might make sense due to the way I parallelized
+
+```{r}
+test_m10 <- readRDS(here("sim_results_MCAR/n200_prop30_effectweak.rds")) 
+test_m30 <- readRDS(here("MCAR_30/n200_prop30_effectweak.rds")) 
+
+test_m10[[8]] |> mutate(rel_bias = (estimate - log(1.1)) / log(1.1) * 100) |> dplyr::select(rel_bias)
+test_m30[[8]] |> mutate(rel_bias = (estimate - log(1.1)) / log(1.1) * 100) |> dplyr::select(rel_bias)
 ```
 
