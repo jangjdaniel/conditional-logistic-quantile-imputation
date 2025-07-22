@@ -34,6 +34,7 @@ sample_sizes <- c(200, 500, 1000) # three settings
 prop_missing <- c(0.30, 0.45, 0.60) # three settings
 
 #effects
+no_effects <- c(logit(0.1), log(1), log(0.7), log(0.85))
 weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
 strong_effects <- c(logit(0.1), log(1.5), log(0.7), log(0.85))
 

@@ -1,0 +1,101 @@
+This qmd houses the distance metrics we will use to compare the imputed distribution with the theoretical distribution. This is just a look into what we did.
+
+```{r}
+set.seed(695)
+
+# generate my data
+
+distance_testing_data <- data_generating_mechanism(my_sample = my_sample,
+                                                   beta_coefficients = weak_effects,
+                                                   prop_missing_MCAR = 0.3,
+                                                   min_val = 0,
+                                                   max_val = q_999999)
+
+my_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
+distance_testing_data <- implement_logistic_quantile_imputation(distance_testing_data, 
+                                                                my_formula, 
+                                                                "biomarker_MCAR_transformed",
+                                                                min_val = 0,
+                                                                max_val = q_999999)
+```
+
+# Distance Metrics for Imputation Quality for PMM and CLQI
+
+We can look at histograms with the imputed data and real data all we want, but there must be a way to quantify how different those two distributions are. For our purposes, we have *KS-test*, which is just the maximum vertical Euclidean distance between two distributions (or supremum if you're working with infinitesimals)
+
+```{r, eval=FALSE}
+#separate data for KS test
+distance_testing_data_zero <- distance_testing_data |>
+  filter(confounder == 0)
+
+distance_testing_data_one <- distance_testing_data |>
+  filter(confounder == 1)
+
+#comparing with a theoretical chi square distribution from which the data was generated
+ks.test(distance_testing_data_zero$biomarker_MCAR_CLQI_untransformed, "pchisq", df = 5)
+ks.test(distance_testing_data_one$biomarker_MCAR_CLQI_untransformed, "pchisq", df = 8)
+```
+
+Now we will focus on *1-Wasserstein distance*, which measures the difference between the two distributions throughout their entire support.
+
+```{r, eval=FALSE}
+wasserstein_1_distance <- function(variable, my_df) {
+  empirical_cdf <- ecdf(variable)
+  u <- seq(0, 0.9999999, length.out = 1000) #we will be working with the quantile version. Integration approximation
+  
+  #now get the quantiles
+  empirical_quantiles <- quantile(variable, probs = u)
+  theoretical_quantiles <- qchisq(u, df = my_df)
+  
+  return(mean(as.numeric(abs(empirical_quantiles - theoretical_quantiles))))
+}
+
+wasserstein_1_distance(distance_testing_data_zero$biomarker_MCAR_CLQI_untransformed, my_df = 5) #from DGM
+wasserstein_1_distance(distance_testing_data_one$biomarker_MCAR_CLQI_untransformed, my_df = 8) #ditto
+```
+
+Visualization
+
+```{r}
+# Ensure confounder is labeled properly
+distance_testing_data$confounder <- factor(distance_testing_data$confounder, 
+                                           levels = c(0, 1), 
+                                           labels = c("Confounder = 0", "Confounder = 1"))
+
+# Plot imputed biomarker distribution with theoretical overlay
+CLQI_imp_quality <- 
+  ggplot(distance_testing_data, aes(x = biomarker_MCAR_CLQI_untransformed, fill = confounder)) +
+  geom_density(alpha = 0.5, color = NA) +
+  facet_wrap(~ confounder) +
+  stat_function(
+    data = data.frame(confounder = "Confounder = 0"), 
+    fun = dchisq, args = list(df = 5), 
+    aes(x = ..x..),  # explicitly map x
+    inherit.aes = FALSE,  # prevent inherited aesthetics
+    color = "black", linetype = "dashed", size = 1
+  ) +
+  stat_function(
+    data = data.frame(confounder = "Confounder = 1"), 
+    fun = dchisq, args = list(df = 8), 
+    aes(x = ..x..),
+    inherit.aes = FALSE,
+    color = "darkgreen", linetype = "dotted", size = 1
+  ) +
+  labs(
+    title = "Imputed Biomarker Distribution by Confounder with Theoretical Overlay",
+    x = "Biomarker (Imputed)",
+    y = "Density"
+  ) +
+  theme_bw() +
+  scale_fill_manual(values = c("skyblue", "orange")) +
+  theme(legend.position = "none")
+
+CLQI_imp_quality
+```
+
+# Save it!
+
+```{r}
+ggsave(CLQI_imp_quality, file = "vis/CLQI_imp_quality.png")
+rm(CLQI_imp_quality)
+```
