@@ -39,7 +39,7 @@ weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
 strong_effects <- c(logit(0.1), log(1.5), log(0.7), log(0.85))
 
 effect_lookup <- list(
-  none - no_effects,
+  none = no_effects,
   weak = weak_effects,
   strong = strong_effects
 )
@@ -250,7 +250,7 @@ PMM <- function(my_data_filtered, correct_formula, num_imp) {
 logistic_quantile_imputation <- function(my_data, transformed_imputation_relationship, row_index) {
   
   # Step 1) generate a random uniform value
-  u <- runif(1, min = 0, max = 0.99) 
+  u <- runif(1, min = 0, max = 1) 
   
   # Step 2) perform quantile regression with the uth quantile
   reg_coeff <- quantreg::rq(as.formula(transformed_imputation_relationship), 
@@ -584,7 +584,7 @@ repeat_full_simulation_MCAR <- function(num_simulations = 1000, my_sample_size, 
 tictoc::tic()
 tester <- repeat_full_simulation_MCAR(num_simulations = 5, #this is solely a test 
                                       my_sample_size = 1000, #again a test
-                                      num_imp = 30, #again a test
+                                      num_imp = 10, #again a test
                                       coefficient_effects = c(logit(0.1), log(1.1), log(0.7), log(0.85)),
                                       true_effect = log(1.1), 
                                       prop_missing_MCAR = 0.3)
@@ -664,4 +664,6 @@ set.seed(525) #set seed for reproducibility
 cores <- 9 #for number of simulation settings: parallelize based on this value
 future::plan(multisession, workers = cores) #change to cores when this becomes implemented
 
-run_subset_simulations_MCAR(grid_design_MCAR, num_sim = 5000, num_imp = 30) #this saves all the results into a folder for loading
+tictoc::tic()
+run_subset_simulations_MCAR(grid_design_MCAR, num_sim = 5000, num_imp = 10) #this saves all the results into a folder for loading
+tictoc::toc()

@@ -705,4 +705,6 @@ set.seed(525) #set seed for reproducibility
 cores <- 9 #for number of simulation settings: parallelize based on this value
 future::plan(multisession, workers = cores) #change to cores when this becomes implemented
 
+tictoc::tic()
 run_subset_simulations_MCAR(grid_design_MCAR, num_sim = 5000, num_imp = 10) #this saves all the results into a folder for loading
+tictoc::toc()
