@@ -144,6 +144,10 @@ saveRDS(sample_1000_weak_coefficients_MCAR_30,
         file = "sim_results/sample_1000_weak_coefficients_MCAR_30.rds")
 ```
 
+```{r}
+sample_1000_weak_coefficients_MCAR_30
+```
+
 When does this break?
 
 ```{r}
