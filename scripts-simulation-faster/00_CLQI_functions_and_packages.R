@@ -50,16 +50,5 @@ inv_log_quant_transform <- function(value, min, max) {
   return(new_value)
 }
 
-
-
-
-# this is purely for the data generating mechanism
-get_mixture_quantile <- function(p) {
-  uniroot(
-    function(q) 0.6 * pchisq(q, 5) + 0.4 * pchisq(q, 8) - p, #this is specific to our DGM
-    c(0, 1000)
-  )$root
-}
-
 # There will be more functions in later scripts, but that is to make life easier, not because they're essential
 

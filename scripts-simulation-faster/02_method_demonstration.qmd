@@ -17,7 +17,7 @@ generated_data_for_testing <- data_generating_mechanism(my_sample = my_sample,
                                                         beta_coefficients = weak_effects,
                                                         prop_missing_MCAR = 0.3,
                                                         min_val = 0,
-                                                        max_val = q_999999)
+                                                        max_val = 20)
 ```
 
 # Complete-Case Analysis (Worst Case)
@@ -243,7 +243,7 @@ But first, here is an example on how quantile regression works
 # quantile regression!
 reg_coeff <- quantreg::rq(biomarker_MCAR_transformed ~ outcome + confounder + predictor, 
                           data = generated_data_for_testing, 
-                          tau = 0.50) #50th quantile
+                          tau = 1) #max quantile
 
 as.numeric(reg_coeff$coefficients["(Intercept)"])
 
@@ -265,7 +265,7 @@ reg_coeff |> filter(term == "(Intercept)") |> pull(estimate) #we only care about
 logistic_quantile_imputation <- function(my_data, transformed_imputation_relationship, row_index) {
   
   # Step 1) generate a random uniform value
-  u <- runif(1, min = 0, max = 0.99) 
+  u <- runif(1, min = 0, max = 1) 
   
   # Step 2) perform quantile regression with the uth quantile
   reg_coeff <- quantreg::rq(as.formula(transformed_imputation_relationship), 
@@ -377,7 +377,7 @@ generated_data_for_CLQI <- implement_logistic_quantile_imputation(generated_data
                                                                   my_formula, 
                                                                   "biomarker_MCAR_transformed",
                                                                   min_val = 0,
-                                                                  max_val = q_999999)
+                                                                  max_val = 20)
 # mutating to see what happened
 generated_data_for_CLQI <- generated_data_for_CLQI |>
   mutate(diff = biomarker_MCAR_CLQI_untransformed - biomarker_MCAR)
@@ -453,7 +453,7 @@ CLQI_results <- CLQI(my_data = generated_data_for_testing,
                      correct_formula = estimation_formula, 
                      num_imp = 10,
                      min_val = 0,
-                     max_val = q_999999)
+                     max_val = 20)
 tictoc::toc()
 
 CLQI_results
@@ -486,7 +486,7 @@ CLQI_results <- CLQI(my_data = generated_data_for_testing,
                      transformed_imputation_relationship = my_formula, 
                      num_imp = 20,
                      min_val = 0,
-                     max_val = q_999999)
+                     max_val = 20)
 tictoc::toc()
 
 CLQI_results
@@ -502,7 +502,7 @@ generated_data_for_CLQI <- implement_logistic_quantile_imputation(generated_data
                                                                   my_formula, 
                                                                   "biomarker_MCAR",
                                                                   min_val = 0,
-                                                                  max_val = q_999999)
+                                                                  max_val = 20)
 # mutating to see what happened
 generated_data_for_CLQI <- generated_data_for_CLQI |>
   dplyr::select(biomarker, biomarker_MCAR, biomarker_MCAR_CLQI) |>

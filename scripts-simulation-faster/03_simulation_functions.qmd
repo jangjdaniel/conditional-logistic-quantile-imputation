@@ -17,7 +17,7 @@ generated_data_for_testing <- data_generating_mechanism(my_sample = my_sample,
                                                         beta_coefficients = weak_effects,
                                                         prop_missing_MCAR = 0.3,
                                                         min_val = 0,
-                                                        max_val = q_999999)
+                                                        max_val = 20)
 
 
 quant_reg_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
@@ -30,7 +30,7 @@ CLQI_results <- CLQI(my_data = generated_data_for_testing,
                      correct_formula = estimation_formula, 
                      num_imp = 10,
                      min_val = 0,
-                     max_val = q_999999)
+                     max_val = 20)
 tictoc::toc()
 
 CLQI_results

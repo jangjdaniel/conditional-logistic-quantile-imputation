@@ -38,7 +38,7 @@ repeat_full_simulation_MCAR <- function(num_simulations = 1000, my_sample_size, 
       beta_coefficients = coefficient_effects,
       prop_missing_MCAR = prop_missing_MCAR,
       min_val = 0,
-      max_val = q_999999)
+      max_val = 20)
     
     # STEP 2) Do CC
     CC <- "outcome ~ biomarker_MCAR + confounder + predictor"
@@ -79,7 +79,7 @@ repeat_full_simulation_MCAR <- function(num_simulations = 1000, my_sample_size, 
                             correct_formula = estimation_formula, 
                             num_imp = num_imp,
                             min_val = 0,
-                            max_val = q_999999)
+                            max_val = 20)
     CLQI_sim_result <- MI_performance_one_iter(CLQI_sim_result,
                                                      "biomarker_MCAR_CLQI_untransformed",
                                                      true_value = true_effect)
@@ -129,11 +129,32 @@ tester
 ```
 
 # SIMULATION SETTING 1: Example of setup
+> Sample size of 1000, MCAR 30%, true effects are weak
 
 ```{r}
-sample_1000_weak_coefficients_30_MCAR <- 
-  repeat_full_simulation_MCAR(num_simulations = 1000, my_sample_size = 1000,
-                              coefficient_effects = weak_effects, true_effect = weak_effects[2],
+sample_1000_weak_coefficients_MCAR_30 <-
+  repeat_full_simulation_MCAR(num_simulations = 1000, 
+                              my_sample_size = 1000,
+                              num_imp = 10,
+                              coefficient_effects = weak_effects, 
+                              true_effect = weak_effects[2],
                               prop_missing_MCAR = 0.3)
+
+saveRDS(sample_1000_weak_coefficients_MCAR_30, 
+        file = "sim_results/sample_1000_weak_coefficients_MCAR_30.rds")
 ```
 
+When does this break?
+
+```{r}
+sample_200_weak_coefficients_MCAR_30 <- 
+  repeat_full_simulation_MCAR(num_simulations = 1000, 
+                              my_sample_size = 200,
+                              num_imp = 10,
+                              coefficient_effects = weak_effects, 
+                              true_effect = weak_effects[2],
+                              prop_missing_MCAR = 0.6)
+
+saveRDS(sample_200_weak_coefficients_MCAR_30, 
+        file = "sim_results/sample_200_weak_coefficients_MCAR_30.rds")
+```

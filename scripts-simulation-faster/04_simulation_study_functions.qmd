@@ -7,8 +7,6 @@ STEP 1) Define our simulation setting
 
 ```{r}
 set.seed(525)
-q_9999 <- get_mixture_quantile(0.9999)
-q_999999 <- get_mixture_quantile(0.999999)
 
 my_sample_size <- 1000
 weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
@@ -29,7 +27,7 @@ simulation_data <- data_generating_mechanism(
   beta_coefficients = weak_effects,
   prop_missing_MCAR = prop_missing_MCAR,
   min_val = 0,
-  max_val = q_999999)
+  max_val = 20)
 ```
 
 STEP 3) Perform `Complete-Case`, `Complete-Data`, `PMM`, and `CLQI` and get *raw logistic regression results*
@@ -75,7 +73,7 @@ CLQI_sim_result <- CLQI(my_data = simulation_data,
                         correct_formula = estimation_formula, 
                         num_imp = num_imp,
                         min_val = 0,
-                        max_val = q_999999)
+                        max_val = 20)
 
 CLQI_sim_result
 ```
@@ -236,7 +234,7 @@ for(i in 1:5) {
     beta_coefficients = weak_effects,
     prop_missing_MCAR = prop_missing_MCAR,
     min_val = 0,
-    max_val = q_999999)
+    max_val = 20)
   
   # STEP 2) Do CC
   CC <- "outcome ~ biomarker_MCAR + confounder + predictor"
@@ -277,7 +275,7 @@ for(i in 1:5) {
                           correct_formula = estimation_formula, 
                           num_imp = num_imp,
                           min_val = 0,
-                          max_val = q_999999)
+                          max_val = 20)
   CLQI_sim_result <- MI_performance_one_iter(CLQI_sim_result,
                                                    "biomarker_MCAR_CLQI_untransformed",
                                                    true_value = true_effect)

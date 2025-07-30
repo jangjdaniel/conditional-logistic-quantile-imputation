@@ -15,16 +15,11 @@ Some values we will use to test
 ```{r}
 my_sample <- 1000 
 min <- 0
-max <- 10 #change the data_generator function to include this
+max <- 20 #change the data_generator function to include this
 weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
 strong_effects <- c(logit(0.1), log(1.5), log(0.7), log(0.85))
 ```
 
-*This is the value of the max*
-
-```{r}
-q_999999 <- get_mixture_quantile(0.999999)
-```
 
 *These are the formulas for use in logistic regression for our simulation study*
 
@@ -54,8 +49,8 @@ data_generator <- function(sample_size, coefficient_vector) {
   confounder <- rbinom(sample_size, size = 1, prob = 0.4) #prob of success is 0.4
   predictor <- rnorm(sample_size, mean = 0, sd = 1) #this is our continuous predictor
   biomarker <- rtrunc(sample_size, spec = "chisq", #use truncated distribution instead
-                      a = 0, b = 10, 
-                      df = 3 + 2*confounder) #if B = 1, X ~ chisq(8). else, X ~ chisq(5)
+                      a = 0, b = 20, 
+                      df = 5 + 3*confounder) #if B = 1, X ~ chisq(8). else, X ~ chisq(5)
   
   # Generate the outcome
   outcome <- plogis(b_0 + b_1*biomarker + b_2*confounder + b_3*predictor) 
@@ -178,9 +173,9 @@ weak_effects_data <- data_generator(my_sample, weak_effects)
 
 weak_effects_data |>
   mutate(biomarker_transformed = sapply(biomarker, log_quant_transform,
-                                        min = 0, max = q_999999)) |>
+                                        min = 0, max = 20)) |>
   mutate(biomarker_untransformed = sapply(biomarker_transformed, inv_log_quant_transform,
-                                          min = 0, max = q_999999)) |>
+                                          min = 0, max = 20)) |>
   mutate(diff = biomarker - biomarker_untransformed) |> # see how close the original and untransformed vals are
   dplyr::select(diff) #look into it.
 ```
@@ -218,7 +213,7 @@ DGM_weak <- data_generating_mechanism(my_sample = my_sample,
                                       beta_coefficients = weak_effects,
                                       prop_missing_MCAR = 0.3,
                                       min_val = 0,
-                                      max_val = q_999999)
+                                      max_val = 20)
 
 # With biomarker data
 summary(glm(as.formula(formula_biomarker), 
@@ -239,7 +234,7 @@ DGM_strong <- data_generating_mechanism(my_sample = my_sample,
                                         beta_coefficients = weak_effects,
                                         prop_missing_MCAR = 0.3,
                                         min_val = 0,
-                                        max_val = q_999999)
+                                        max_val = 20)
 
 # With biomarker data
 glm(as.formula(formula_biomarker), 
@@ -261,7 +256,7 @@ DGM_weak <- data_generating_mechanism(my_sample = my_sample,
                                       beta_coefficients = weak_effects,
                                       prop_missing_MCAR = 0.3,
                                       min_val = 0,
-                                      max_val = q_999999)
+                                      max_val = 20)
 
 #this is just some chatgpt code for a quick check
 DGM_weak$confounder <- factor(DGM_weak$confounder, levels = c(0, 1), labels = c("Confounder = 0", "Confounder = 1"))
