@@ -245,7 +245,7 @@ PMM <- function(my_data_filtered, correct_formula, num_imp) {
 logistic_quantile_imputation <- function(my_data, transformed_imputation_relationship, row_index) {
   
   # Step 1) generate a random uniform value
-  u <- runif(1, min = 0, max = 0.99) 
+  u <- runif(1, min = 0, max = 1) 
   
   # Step 2) perform quantile regression with the uth quantile
   reg_coeff <- quantreg::rq(as.formula(transformed_imputation_relationship), 
