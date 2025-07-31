@@ -349,23 +349,25 @@ full_performance <- function(simulation_results, rel_eff_comparison) {
   
   full_simulation_results <- simulation_results |>
     summarize(
-      estimate = mean(estimate),
-      MCSE_estimate = MCSE(simulation_results$estimate, num_sim = 10),
-      
-      bias = mean(bias),
-      MCSE_bias = MCSE(simulation_results$bias, num_sim = 10),
-      
+      estimate_a = mean(estimate),
+      MCSE_estimate = sd(estimate) / sqrt(n()),
+        
+      bias_a = mean(bias),
+        
       empirical_SE = sd(estimate),
-      model_SE = mean(model_SE),
-      MCSE_model_SE = MCSE(simulation_results$model_SE, num_sim = 10),
+      model_SE_a = mean(model_SE),
+      MCSE_model_SE = sd(model_SE) / sqrt(n()),
+        
+      coverage_a = sum(coverage) / n(),
+      MCSE_coverage = sqrt(coverage_a * (1 - coverage_a) / n()),
       
-      coverage = sum(coverage) / n(),
-      power = sum(power) / n(),
-    ) |>
-    mutate(RMSE = sqrt(bias^2 + empirical_SE^2))
+      power_a = sum(power) / n(),
+      MCSE_power = sqrt(power_a * (1 - power_a) / n())
+      ) |>
+    mutate(MSE = bias_a^2 + empirical_SE^2)
+
   
   return(full_simulation_results)
-  
 }
 ```
 
