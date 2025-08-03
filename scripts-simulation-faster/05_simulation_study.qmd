@@ -148,7 +148,7 @@ saveRDS(sample_1000_weak_coefficients_MCAR_30,
 sample_1000_weak_coefficients_MCAR_30
 ```
 
-When does this break?
+# SIMULATION SETTING 2: When does this method break?
 
 ```{r}
 sample_200_weak_coefficients_MCAR_30 <- 
@@ -162,3 +162,50 @@ sample_200_weak_coefficients_MCAR_30 <-
 saveRDS(sample_200_weak_coefficients_MCAR_30, 
         file = "sim_results/sample_200_weak_coefficients_MCAR_30.rds")
 ```
+
+Presentation ready figures (function)
+
+```{r}
+presentation_ready_results <- function(results, true_effect) {
+  
+  cleaned_results <- rbind(
+    results[[2]] |> mutate(type = "CC"),
+    results[[4]] |> mutate(type = "CD"),
+    results[[6]] |> mutate(type = "PMM"),
+    results[[8]] |> mutate(type = "CLQI")
+    ) |>
+    mutate(rel_bias = 100 * (estimate_a - true_effect) / true_effect) |>
+    relocate(type, .before = 1) |>
+    relocate(rel_bias, .before = 5) |>
+    mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+    gt() |>
+    cols_label(
+      type = "Method",
+      estimate_a = "Estimate",
+      MCSE_estimate = "MCSE Estimate",
+      bias_a = "Bias",
+      rel_bias = "Relative Bias",
+      empirical_SE = "Empirical SE",
+      model_SE_a = "Model-Based SE",
+      MCSE_model_SE = "MCSE MSE",
+      coverage_a = "Coverage",
+      MCSE_coverage = "MCSE Coverage",
+      power_a = "Power",
+      MCSE_power = "MCSE Power"
+      ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  )
+  
+  return(cleaned_results)
+}
+```
+
+Test case (I guess)
+
+```{r}
+presentation_ready_results(sample_1000_weak_coefficients_MCAR_30, log(1.1))
+presentation_ready_results(sample_200_weak_coefficients_MCAR_30, log(1.1))
+```
+
