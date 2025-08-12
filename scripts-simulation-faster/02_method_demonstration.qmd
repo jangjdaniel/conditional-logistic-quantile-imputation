@@ -3,6 +3,13 @@ This qmd houses the example implementation of *PMM* and *CLQI*.
 The functions defined here will form the basis of how the functions for our simulation study will be written `03`, and our simulation study in `04`
 
 Before we start, you must run `00` and `01`, but we removed unnecessary values each time for organizational purposes.
+
+```{r}
+library(knitr)
+knitr::purl("01_data_generating_mechanism.qmd", output = "temp_scripts/01_temp_script.R")
+source("temp_scripts/01_temp_script.R")
+```
+
 Here are them again. Have fun !
 
 ```{r}

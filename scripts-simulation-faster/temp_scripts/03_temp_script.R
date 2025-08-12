@@ -1,19 +1,9 @@
-
-This qmd defines the functions that we will be using for our simulation study and example implementations with our generated data from the previous scripts
-
-Before that, we need to perform *Rubin Rules* to aggregate all important information!
-This will be incorporated in these functions, as they take in the list of regression coefficients from `02` functions
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 knitr::purl("02_method_demonstration.qmd", output = "temp_scripts/02_temp_script.R")
 source("temp_scripts/02_temp_script.R")
-```
 
-# Rubin Rules
 
-This is the toy data we will be using for Rubin Rules for testing our functions
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 set.seed(525)
 
 my_sample <- 1000
@@ -44,25 +34,19 @@ CLQI_results
 glm(outcome ~ biomarker + confounder + predictor,
     data = generated_data_for_testing,
     family = "binomial")
-```
 
-## `rubin_rule_estimate` uses rubin rules to calculate the estimate after MI
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 rubin_rule_estimate <- function(extracted_statistics) {
   return(mean(extracted_statistics$Estimate))
 }
-```
 
-> Test case
 
-```{r, eval=FALSE}
-rubin_rule_estimate(CLQI_results)
-```
+## ----eval=FALSE--------------------------------------------------------------------------------------------
+# rubin_rule_estimate(CLQI_results)
 
-## `rubin_rule_model_se` uses rubin rules to calculate the SE of our estimate after MI
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 rubin_rule_SE <- function(extracted_statistics) {
   #extract necessary vectors
   estimate_vector <- as.vector(extracted_statistics$Estimate)
@@ -78,23 +62,13 @@ rubin_rule_SE <- function(extracted_statistics) {
   
   return(sqrt(total_variance))
 }
-```
 
-> Test case
 
-```{r, eval=FALSE}
-rubin_rule_SE(CLQI_results)
-```
+## ----eval=FALSE--------------------------------------------------------------------------------------------
+# rubin_rule_SE(CLQI_results)
 
-# Performance Measure Functions
 
-## `bias` is too simple to be a function. It will be calculated manually in `04`
-
-## `model_based_SE` is just the same as `rubin_rule_SE`, so a separate function is unnecessary
-
-## `coverage` uses the estimate and SE from Rubin Rules to see if the true value is contained
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 coverage <- function(RR_estimate, SE_estimate, orig_sample_size, true_value) {
   t_star <- qt(0.975, df = orig_sample_size - 1) #good enough estimate
   
@@ -103,11 +77,9 @@ coverage <- function(RR_estimate, SE_estimate, orig_sample_size, true_value) {
   
   return(coverage_indicator)
 }
-```
 
-## `power` uses the wald test to calculate a p-value from the estimate
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 power <- function(extracted_statistics) {
   
   # extract important information
@@ -132,13 +104,9 @@ power <- function(extracted_statistics) {
   #return 1 if we reject H0 (from DGM, we know H1 to be true)
   return(ifelse(p_value < 0.05, 1, 0))
 }
-```
 
-# The following functions can only be applied to the dataset extracted after running a full simulation
 
-## `rel_efficiency` calculates the relative efficency between two methods
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 rel_efficiency <- function(simulation_data_A, simulation_data_B) {
   empirical_variance_A <- var(simulation_data_A$Estimate)
   empirical_variance_B <- var(simulation_data_B$Estimate)
@@ -146,14 +114,10 @@ rel_efficiency <- function(simulation_data_A, simulation_data_B) {
   # Then return our ratio
   return(empirical_variance_B/empirical_variance_A)
 }
-```
 
-# Monte Carlo Testing for sufficient simulations (N)
 
-## `MCSE` is the function for calculating Monte Carlo Standard Error
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 MCSE <- function(vec_values_interest, num_sim) {
   return(sd(vec_values_interest) / sqrt(num_sim))
 }
-```
+

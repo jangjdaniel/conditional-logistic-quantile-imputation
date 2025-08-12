@@ -1,116 +1,87 @@
-
-This qmd will describe how we will perform the full simulation study. Most functions have already been defined in `00`, `01`, `02`, and `03`, so make sure to read everything there.
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 knitr::purl("03_simulation_functions.qmd", output = "temp_scripts/03_temp_script.R")
 source("temp_scripts/03_temp_script.R")
-```
 
 
-*This qmd will likely be a demonstration of how one simulation setting will be tested. We'll see, however*
-
-STEP 1) Define our simulation setting
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 set.seed(525)
 
 my_sample_size <- 1000
 weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
 num_imp <- 10 #number of imputations
 prop_missing_MCAR <- 0.3
-```
 
-```{r}
+
+## ----------------------------------------------------------------------------------------------------------
 true_effect <- weak_effects[2]
 true_effect
-```
 
-STEP 2) Generate dataset with all missingness
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 simulation_data <- data_generating_mechanism(
   my_sample = my_sample_size,
   beta_coefficients = weak_effects,
   prop_missing_MCAR = prop_missing_MCAR,
   min_val = 0,
   max_val = 20)
-```
 
-STEP 3) Perform `Complete-Case`, `Complete-Data`, `PMM`, and `CLQI` and get *raw logistic regression results*
 
-`Complete-Case`: Recall that we need to specify the correct missing data: MCAR or MAR
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 CC <- "outcome ~ biomarker_MCAR + confounder + predictor"
 CC_sim_result <- complete_case_or_data(simulation_data, CC)
 CC_sim_result
-```
 
-`Complete-Data`
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 CD <- "outcome ~ biomarker + confounder + predictor"
 CD_sim_result <- complete_case_or_data(simulation_data, CD)
 CD_sim_result
-```
-
-`PMM`: Recall we need to select our data first
-
-```{r, eval=FALSE}
-PMM_formula <- "outcome ~ biomarker_MCAR + confounder + predictor"
-simulation_data_PMM <- simulation_data |>
-  dplyr::select(outcome, biomarker_MCAR, confounder, predictor)
-
-PMM_sim_result <- PMM(simulation_data_PMM, PMM_formula, num_imp)
-PMM_sim_result
-```
-
-`CLQI`: this one was not coded super well, so make sure you're specifying everything correctly
-> Must feed the function the transformed variable, but the estimation formula will be untransformed.
-> Sorry I coded this weirdly
-
-```{r, eval=FALSE}
-quant_reg_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
-estimation_formula <- "outcome ~ biomarker_MCAR_CLQI_untransformed + confounder + predictor"
-
-CLQI_sim_result <- CLQI(my_data = simulation_data, 
-                        var_for_imp = "biomarker_MCAR_transformed",
-                        transformed_imputation_relationship = quant_reg_formula, 
-                        correct_formula = estimation_formula, 
-                        num_imp = num_imp,
-                        min_val = 0,
-                        max_val = 20)
-
-CLQI_sim_result
-```
 
 
-STEP 4) Calculate some of the performance measures 
+## ----eval=FALSE--------------------------------------------------------------------------------------------
+# PMM_formula <- "outcome ~ biomarker_MCAR + confounder + predictor"
+# simulation_data_PMM <- simulation_data |>
+#   dplyr::select(outcome, biomarker_MCAR, confounder, predictor)
+# 
+# PMM_sim_result <- PMM(simulation_data_PMM, PMM_formula, num_imp)
+# PMM_sim_result
 
-``CC and CD`: example of a single run and then a function implementation
 
-```{r, eval=FALSE}
-# t value
-orig_sample_size <- 1000
-t_star <- qt(0.975, df = orig_sample_size - 1)
+## ----eval=FALSE--------------------------------------------------------------------------------------------
+# quant_reg_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
+# estimation_formula <- "outcome ~ biomarker_MCAR_CLQI_untransformed + confounder + predictor"
+# 
+# CLQI_sim_result <- CLQI(my_data = simulation_data,
+#                         var_for_imp = "biomarker_MCAR_transformed",
+#                         transformed_imputation_relationship = quant_reg_formula,
+#                         correct_formula = estimation_formula,
+#                         num_imp = num_imp,
+#                         min_val = 0,
+#                         max_val = 20)
+# 
+# CLQI_sim_result
 
-#summarize everything!
-CD_sim_run <- CD_sim_result |>
-  dplyr::filter(term == "biomarker") |>
-  dplyr::mutate(
-    bias = Estimate - true_effect,
-    rel_bias = (bias / true_effect) * 100,
-      lower = Estimate - t_star * `Std. Error`,
-      upper = Estimate + t_star * `Std. Error`,
-    coverage = ifelse(lower <= true_effect & true_effect <= upper, 1, 0),
-    power = ifelse(`Pr(>|z|)` < 0.05, 1, 0)
-  ) |>
-  dplyr::select(estimate = Estimate, bias, rel_bias, model_SE = `Std. Error`, coverage, power)
-```
 
-`complete_performance_one_iter` is a function that is meant for complete-case or complete-data. It calculates all the necessary performance measures that we are curious about
+## ----eval=FALSE--------------------------------------------------------------------------------------------
+# # t value
+# orig_sample_size <- 1000
+# t_star <- qt(0.975, df = orig_sample_size - 1)
+# 
+# #summarize everything!
+# CD_sim_run <- CD_sim_result |>
+#   dplyr::filter(term == "biomarker") |>
+#   dplyr::mutate(
+#     bias = Estimate - true_effect,
+#     rel_bias = (bias / true_effect) * 100,
+#       lower = Estimate - t_star * `Std. Error`,
+#       upper = Estimate + t_star * `Std. Error`,
+#     coverage = ifelse(lower <= true_effect & true_effect <= upper, 1, 0),
+#     power = ifelse(`Pr(>|z|)` < 0.05, 1, 0)
+#   ) |>
+#   dplyr::select(estimate = Estimate, bias, rel_bias, model_SE = `Std. Error`, coverage, power)
 
-```{r}
+
+## ----------------------------------------------------------------------------------------------------------
 complete_performance_one_iter <- function(my_reg_coefficients, orig_sample_size, 
                                           true_effect, biomarker_name) {
   
@@ -132,66 +103,55 @@ complete_performance_one_iter <- function(my_reg_coefficients, orig_sample_size,
   
   return(sim_run)
 }
-```
 
-> Test case 1: should give same code as the first part of the code
 
-```{r, eval=FALSE}
-complete_performance_one_iter(CD_sim_result, orig_sample_size = 1000, 
-                              true_effect = true_effect, biomarker_name = "biomarker")
-```
+## ----eval=FALSE--------------------------------------------------------------------------------------------
+# complete_performance_one_iter(CD_sim_result, orig_sample_size = 1000,
+#                               true_effect = true_effect, biomarker_name = "biomarker")
 
-> Test case 2: for CC: ensure that you use the right name for biomarker
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 complete_performance_one_iter(CC_sim_result, orig_sample_size = 1000, 
                               true_effect = true_effect, biomarker_name = "biomarker_MCAR")
-```
 
-`PMM`
 
-```{r, eval=FALSE}
-estimate_PMM <- rubin_rule_estimate(PMM_sim_result)
-model_SE_PMM <- rubin_rule_SE(PMM_sim_result)
+## ----eval=FALSE--------------------------------------------------------------------------------------------
+# estimate_PMM <- rubin_rule_estimate(PMM_sim_result)
+# model_SE_PMM <- rubin_rule_SE(PMM_sim_result)
+# 
+# #now the dataframe
+# PMM_sim_run <- data.frame(
+#   estimate = estimate_PMM,
+#   bias = estimate_PMM - true_effect,
+#   model_SE = model_SE_PMM,
+#   coverage = coverage(estimate_PMM, model_SE_PMM,
+#                           orig_sample_size = 1000,
+#                           true_value = true_effect) ,
+#   power =  power(PMM_sim_result)
+# )
+# 
+# PMM_sim_run
 
-#now the dataframe
-PMM_sim_run <- data.frame(
-  estimate = estimate_PMM,
-  bias = estimate_PMM - true_effect,
-  model_SE = model_SE_PMM,
-  coverage = coverage(estimate_PMM, model_SE_PMM, 
-                          orig_sample_size = 1000,
-                          true_value = true_effect) ,
-  power =  power(PMM_sim_result)
-) 
 
-PMM_sim_run
-```
+## ----eval=FALSE--------------------------------------------------------------------------------------------
+# estimate_CLQI <- rubin_rule_estimate(CLQI_sim_result)
+# model_SE_CLQI <- rubin_rule_SE(CLQI_sim_result)
+# 
+# #now the dataframe
+# CLQI_sim_run <- data.frame(
+#   estimate = estimate_CLQI,
+#   bias = estimate_CLQI - true_effect,
+#   model_SE = model_SE_CLQI,
+#   coverage = coverage(estimate_CLQI, model_SE_CLQI,
+#                           orig_sample_size = 1000,
+#                           true_value = true_effect) ,
+#   power =  power(CLQI_sim_result)
+# )
+# 
+# CLQI_sim_run
 
-`CLQI`
 
-```{r, eval=FALSE}
-estimate_CLQI <- rubin_rule_estimate(CLQI_sim_result)
-model_SE_CLQI <- rubin_rule_SE(CLQI_sim_result)
-
-#now the dataframe
-CLQI_sim_run <- data.frame(
-  estimate = estimate_CLQI,
-  bias = estimate_CLQI - true_effect,
-  model_SE = model_SE_CLQI,
-  coverage = coverage(estimate_CLQI, model_SE_CLQI, 
-                          orig_sample_size = 1000,
-                          true_value = true_effect) ,
-  power =  power(CLQI_sim_result)
-) 
-
-CLQI_sim_run
-```
-
-`MI_performance_one_iter` is a function that calculates everything automatically
-- Same arguments as `extract_statistics`
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 MI_performance_one_iter <- function(my_list_of_reg, var_of_interest, true_value) {
   estimate <- rubin_rule_estimate(my_list_of_reg)
   model_SE <- rubin_rule_SE(my_list_of_reg)
@@ -209,19 +169,15 @@ MI_performance_one_iter <- function(my_list_of_reg, var_of_interest, true_value)
 
   return(sim_run)
 }
-```
 
-> Test case 1) Check that CLQI and PMM ones look the same
 
-```{r, eval=FALSE}
-MI_performance_one_iter(CLQI_sim_result,
-                        "biomarker_MCAR_CLQI_untransformed",
-                        true_value = true_effect)
-```
+## ----eval=FALSE--------------------------------------------------------------------------------------------
+# MI_performance_one_iter(CLQI_sim_result,
+#                         "biomarker_MCAR_CLQI_untransformed",
+#                         true_value = true_effect)
 
-STEP 5) Repeat Steps 1-4 N times
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 # STEP 0) Define datasets for all four methods
 CC_total_result <- data.frame()
 CD_total_result <- data.frame()
@@ -294,11 +250,9 @@ for(i in 1:5) {
     print(iteration_indicator)
 }
 tictoc::toc()
-```
 
-Check that all of this works:
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 CC_total_result
 CD_total_result
 PMM_total_result
@@ -309,24 +263,16 @@ ggplot(data = PMM_total_result, aes(x = bias)) +
 
 ggplot(data = CLQI_total_result, aes(x = bias)) + 
   geom_density()
-```
 
-Save the data to sim_results
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 sim_list <- list(CC_total_result, CD_total_result, PMM_total_result, CLQI_total_result)
 
 #save in my sim folder
 saveRDS(sim_list, file="sim_results/initial_sim_result.RData")
-```
 
 
-*Function will be defined in* `05` for clarity
-
-STEP 6) After Step 5, calculate all the remaining performance measures
-- Example with CLQI
-
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 CLQI_total_result |>
   summarize(
     estimate = mean(estimate),
@@ -346,11 +292,9 @@ CLQI_total_result |>
     columns = everything(),
     decimals = 4
   )
-```
 
-`full_performance`  calculates the full performance measures in a nice table for all the tested methods
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 full_performance <- function(simulation_results, rel_eff_comparison) {
   
   full_simulation_results <- simulation_results |>
@@ -375,11 +319,9 @@ full_performance <- function(simulation_results, rel_eff_comparison) {
   
   return(full_simulation_results)
 }
-```
 
-> Test case 1-4: check it out
 
-```{r}
+## ----------------------------------------------------------------------------------------------------------
 full_performance(CC_total_result, 
                  rel_eff_comparison = CD_total_result)
 
@@ -391,4 +333,4 @@ full_performance(PMM_total_result,
 
 full_performance(CLQI_total_result, 
                  rel_eff_comparison = CD_total_result)
-```
+

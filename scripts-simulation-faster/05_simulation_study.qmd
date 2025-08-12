@@ -7,6 +7,13 @@ We will first define a function that encompasses all the important parts needed 
 set.seed(695)
 ```
 
+Load in `04`, which loads in `03, 02, 01, 00`
+
+```{r}
+knitr::purl("04_simulation_study_functions.qmd", output = "temp_scripts/04_temp_script.R")
+source("temp_scripts/04_temp_script.R")
+```
+
 # Coefficient Effects
 
 ```{r}
