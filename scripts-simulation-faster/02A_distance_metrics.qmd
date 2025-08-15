@@ -1,22 +1,28 @@
 This qmd houses the distance metrics we will use to compare the imputed distribution with the theoretical distribution. This is just a look into what we did.
 
 ```{r}
-set.seed(695)
+knitr::purl("02_method_demonstration.qmd", output = "temp_scripts/02_temp_script.R")
+source("temp_scripts/02_temp_script.R")
+set.seed(525)
+```
 
+
+```{r}
 # generate my data
+weak_effects <- c(logit(0.1), log(1.1), log(0.7), log(0.85))
 
-distance_testing_data <- data_generating_mechanism(my_sample = my_sample,
+distance_testing_data <- data_generating_mechanism(my_sample = 1000,
                                                    beta_coefficients = weak_effects,
                                                    prop_missing_MCAR = 0.3,
                                                    min_val = 0,
-                                                   max_val = q_999999)
+                                                   max_val = 20)
 
 my_formula <- "biomarker_MCAR_transformed ~ outcome + confounder + predictor"
 distance_testing_data <- implement_logistic_quantile_imputation(distance_testing_data, 
                                                                 my_formula, 
                                                                 "biomarker_MCAR_transformed",
                                                                 min_val = 0,
-                                                                max_val = q_999999)
+                                                                max_val = 20)
 ```
 
 # Distance Metrics for Imputation Quality for PMM and CLQI
